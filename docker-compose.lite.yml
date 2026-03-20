@@ -1,0 +1,37 @@
+# TLDREADME Lite — just the databases
+# Use this if you already have Ollama running locally (most people do)
+# Copy as: cp docker-compose.lite.yml docker-compose.override.yml
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkordb_data:/data
+    command: >
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --loadmodule /usr/lib/redis/modules/falkordb.so
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  qdrant_data:
+  falkordb_data:
