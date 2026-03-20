@@ -1,0 +1,67 @@
+# TLDREADME — Full Stack
+# Usage: docker compose up -d
+# Then:  tldreadme init /path/to/your/code
+
+services:
+  # Vector DB — stores code embeddings for semantic search
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"   # HTTP API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Graph DB — stores call graphs, import graphs, data flow, patterns
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkordb_data:/data
+    command: >
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --loadmodule /usr/lib/redis/modules/falkordb.so
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Local LLM — default inference backend (swap via LiteLLM config)
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Pull a small embedding model + chat model on first run
+    # ollama pull nomic-embed-text && ollama pull qwen2.5-coder:7b
+
+  # LiteLLM proxy — unified API for Ollama/OpenAI/Anthropic/OpenRouter
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml
+    command: --config /app/config.yaml --port 4000
+    depends_on:
+      - ollama
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+
+volumes:
+  qdrant_data:
+  falkordb_data:
+  ollama_data:
