@@ -674,8 +674,8 @@ def _parse_pep508(dep_str: str) -> tuple:
 # build commands, design decisions. The code tells you WHAT,
 # these tell you WHY.
 #
-# On a 100-repo tree, this indexes every project's docs so the
-# LLM has the full context landscape without reading every file.
+# Indexes every project's docs so the LLM has the full context
+# landscape without reading every file.
 
 # Files we always want to capture, in priority order
 CONTEXT_DOC_NAMES = {
@@ -710,8 +710,8 @@ def scan_context_docs(root: Path, exclude: Optional[set] = None, follow_symlinks
     at every level of the tree. Each doc is parsed into sections
     by heading for structured retrieval.
 
-    On a tree of 100 repos, this gives you every project's intent
-    without reading a single line of code.
+    Gives you every project's intent without reading a single
+    line of code.
 
     Args:
         follow_symlinks: If False (default), skip symlinked files and dirs
