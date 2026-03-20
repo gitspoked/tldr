@@ -70,7 +70,7 @@ Your Code
 ### Install
 
 ```bash
-git clone https://github.com/YOUR_USER/tldreadme.git
+git clone https://github.com/ntele-dev/tldreadme.git
 cd tldreadme
 python3.12 -m venv .venv
 .venv/bin/pip install -e .

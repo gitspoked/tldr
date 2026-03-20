@@ -55,6 +55,21 @@ class Dependency:
 
 
 @dataclass
+class ContextDoc:
+    """A documentation file that provides human intent and project context.
+
+    CLAUDE.md, README.md, CONTEXT.md, ARCHITECTURE.md, etc.
+    The code says WHAT, these say WHY.
+    """
+    file: str
+    kind: str                  # "claude", "readme", "context", "architecture", "changelog", "other"
+    title: str                 # first heading or filename
+    content: str               # full text
+    sections: list[dict]       # [{heading, content, line}] — parsed by headings
+    project_root: str          # which project this belongs to (nearest dir with manifest)
+
+
+@dataclass
 class ParseResult:
     """Everything extracted from a single file."""
     file: str
@@ -141,13 +156,15 @@ def parse_file(path: Path) -> ParseResult | None:
     )
 
 
-def parse_directory(root: Path, exclude: Optional[set] = None) -> list[ParseResult]:
+def parse_directory(root: Path, exclude: Optional[set] = None, follow_symlinks: bool = False) -> list[ParseResult]:
     """Recursively parse all files in a directory."""
     if exclude is None:
         exclude = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build"}
 
     results = []
     for path in root.rglob("*"):
+        if not follow_symlinks and path.is_symlink():
+            continue
         if path.is_file() and not any(ex in path.parts for ex in exclude):
             result = parse_file(path)
             if result and result.symbols:
@@ -648,3 +665,150 @@ def _parse_pep508(dep_str: str) -> tuple:
     if match:
         return match.group(1), match.group(2).strip() or "*"
     return dep_str, "*"
+
+
+# ── Context Document Scanner ──────────────────────────────────────
+#
+# Scans for CLAUDE.md, README.md, CONTEXT.md, ARCHITECTURE.md, etc.
+# These are the "why" files — human intent, project structure,
+# build commands, design decisions. The code tells you WHAT,
+# these tell you WHY.
+#
+# On a 100-repo tree, this indexes every project's docs so the
+# LLM has the full context landscape without reading every file.
+
+# Files we always want to capture, in priority order
+CONTEXT_DOC_NAMES = {
+    # AI assistant context
+    "CLAUDE.md": "claude",
+    "claude.md": "claude",
+    "AGENTS.md": "agents",
+    "agents.md": "agents",
+    "GEMINI.md": "gemini",
+    "TLDREADME.md": "tldreadme",
+    "TLDR.md": "tldr",
+    # Project docs
+    "README.md": "readme",
+    "readme.md": "readme",
+    "CONTEXT.md": "context",
+    "ARCHITECTURE.md": "architecture",
+    "DESIGN.md": "architecture",
+    "CONTRIBUTING.md": "contributing",
+    "CHANGELOG.md": "changelog",
+    "DEVELOPMENT.md": "development",
+    "SETUP.md": "setup",
+    "USAGE.md": "usage",
+    "QUICKSTART.md": "setup",
+    "API.md": "api",
+}
+
+
+def scan_context_docs(root: Path, exclude: Optional[set] = None, follow_symlinks: bool = False) -> list[ContextDoc]:
+    """Scan a directory tree for all context/documentation files.
+
+    Finds CLAUDE.md, README.md, CONTEXT.md, ARCHITECTURE.md, etc.
+    at every level of the tree. Each doc is parsed into sections
+    by heading for structured retrieval.
+
+    On a tree of 100 repos, this gives you every project's intent
+    without reading a single line of code.
+
+    Args:
+        follow_symlinks: If False (default), skip symlinked files and dirs
+                         to avoid loops and scanning outside the tree.
+    """
+    if exclude is None:
+        exclude = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build"}
+
+    docs = []
+    for path in root.rglob("*.md"):
+        if not follow_symlinks and path.is_symlink():
+            continue
+        if any(ex in path.parts for ex in exclude):
+            continue
+
+        name = path.name
+        kind = CONTEXT_DOC_NAMES.get(name)
+
+        # Also capture any .md in a .claude/ directory
+        if kind is None and ".claude" in path.parts:
+            kind = "claude"
+
+        # Skip random markdown files that aren't project docs
+        if kind is None:
+            continue
+
+        try:
+            content = path.read_text(errors="replace")
+        except OSError:
+            continue
+
+        # Skip empty files
+        if not content.strip():
+            continue
+
+        # Parse into sections by heading
+        sections = _parse_markdown_sections(content)
+
+        # Find the nearest project root (dir with Cargo.toml, package.json, etc.)
+        project_root = _find_project_root(path.parent)
+
+        # Title = first heading, or filename
+        title = name
+        if sections and sections[0].get("heading"):
+            title = sections[0]["heading"]
+
+        docs.append(ContextDoc(
+            file=str(path),
+            kind=kind,
+            title=title,
+            content=content,
+            sections=sections,
+            project_root=str(project_root),
+        ))
+
+    return docs
+
+
+def _parse_markdown_sections(content: str) -> list[dict]:
+    """Split markdown into sections by heading."""
+    sections = []
+    current_heading = None
+    current_lines = []
+    current_line = 0
+
+    for i, line in enumerate(content.splitlines(), 1):
+        if line.startswith("#"):
+            # Flush previous section
+            if current_heading is not None or current_lines:
+                sections.append({
+                    "heading": current_heading,
+                    "content": "\n".join(current_lines).strip(),
+                    "line": current_line,
+                })
+            current_heading = line.lstrip("#").strip()
+            current_lines = []
+            current_line = i
+        else:
+            current_lines.append(line)
+
+    # Flush last section
+    if current_heading is not None or current_lines:
+        sections.append({
+            "heading": current_heading,
+            "content": "\n".join(current_lines).strip(),
+            "line": current_line,
+        })
+
+    return sections
+
+
+def _find_project_root(directory: Path) -> Path:
+    """Walk up to find the nearest directory with a manifest file."""
+    manifest_names = {"Cargo.toml", "package.json", "go.mod", "pyproject.toml", "setup.py"}
+    current = directory
+    while current != current.parent:
+        if any((current / m).exists() for m in manifest_names):
+            return current
+        current = current.parent
+    return directory  # fallback to the directory itself
