@@ -245,4 +245,4 @@ The pattern: start fast, go deeper only when you need to. `know` before `explain
 
 ---
 
-*Write the shit you'd use.*
+*Write what you'd use.*
