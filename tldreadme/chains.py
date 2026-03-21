@@ -88,8 +88,8 @@ def impact(name: str, root: str = ".") -> dict:
     # Step 2: Graph-based transitive dependents
     dependents = []
     try:
-        from .grapher import CodeGrapher
-        grapher = CodeGrapher()
+        from ._shared import get_grapher
+        grapher = get_grapher()
         dependents = grapher.get_dependents(name)
     except Exception:
         pass

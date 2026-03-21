@@ -2,18 +2,17 @@
 
 import litellm
 import os
-from .embedder import CodeEmbedder
-from .grapher import CodeGrapher
+import subprocess
+from ._shared import get_embedder, get_grapher
 
-LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:4000")
-CHAT_MODEL = "chat"
+from .embedder import _api_base, CHAT_MODEL
 
 
 def ask_question(question: str, scope: str | None = None) -> str:
     """Full RAG pipeline: retrieve relevant code, synthesize answer."""
 
-    embedder = CodeEmbedder()
-    grapher = CodeGrapher()
+    embedder = get_embedder()
+    grapher = get_grapher()
 
     # 1. Semantic retrieval from Qdrant
     similar_chunks = embedder.search_similar(question, limit=10)
@@ -40,7 +39,7 @@ def ask_question(question: str, scope: str | None = None) -> str:
 
 def read_similar(query: str, limit: int = 5) -> list[dict]:
     """Return actual code bodies of semantically similar symbols."""
-    embedder = CodeEmbedder()
+    embedder = get_embedder()
     results = embedder.search_similar(query, limit=limit)
     # Return full code content, not just metadata
     return [
@@ -59,8 +58,8 @@ def read_similar(query: str, limit: int = 5) -> list[dict]:
 
 def read_symbol(name: str) -> dict | None:
     """Return everything known about a symbol: body, callers, callees, context."""
-    embedder = CodeEmbedder()
-    grapher = CodeGrapher()
+    embedder = get_embedder()
+    grapher = get_grapher()
 
     # Find the symbol by name in Qdrant
     results = embedder.search_similar(f"function {name}", limit=5)
@@ -87,7 +86,7 @@ def read_symbol(name: str) -> dict | None:
 
 def read_module(module_path: str) -> dict:
     """Return full knowledge about a module/directory."""
-    grapher = CodeGrapher()
+    grapher = get_grapher()
     symbols = grapher.get_module_symbols(module_path)
     return {
         "module": module_path,
@@ -98,13 +97,13 @@ def read_module(module_path: str) -> dict:
 
 def read_flow(entry: str, depth: int = 5) -> list[dict]:
     """Trace execution flow from an entry point."""
-    grapher = CodeGrapher()
+    grapher = get_grapher()
     return grapher.get_flow(entry, max_depth=depth)
 
 
 def tldr(path: str) -> str:
     """Generate a TL;DR summary of a module/directory via RAG."""
-    grapher = CodeGrapher()
+    grapher = get_grapher()
     symbols = grapher.get_module_symbols(path)
 
     context = f"Module: {path}\n"
@@ -121,7 +120,7 @@ def tldr(path: str) -> str:
     resp = litellm.completion(
         model=CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        api_base=LITELLM_URL,
+        api_base=_api_base(),
         max_tokens=1000,
     )
     return resp.choices[0].message.content
@@ -134,8 +133,8 @@ def suggest_goals(path: str) -> dict:
     missing tests, orphan symbols, unused imports, partially-implemented
     features — and suggests what goals make sense.
     """
-    grapher = CodeGrapher()
-    embedder = CodeEmbedder()
+    grapher = get_grapher()
+    embedder = get_embedder()
 
     # Gather broad codebase signal
     symbols = grapher.get_module_symbols(path)
@@ -194,7 +193,7 @@ def suggest_goals(path: str) -> dict:
     resp = litellm.completion(
         model=CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        api_base=LITELLM_URL,
+        api_base=_api_base(),
         max_tokens=1500,
     )
 
@@ -217,8 +216,8 @@ def best_question(goal: str, path: str | None = None) -> dict:
     and formulates the precise question that will lead to the best outcome.
     Then it answers that question against the actual code.
     """
-    embedder = CodeEmbedder()
-    grapher = CodeGrapher()
+    embedder = get_embedder()
+    grapher = get_grapher()
 
     # Find code relevant to the goal
     relevant = embedder.search_similar(goal, limit=10)
@@ -265,7 +264,7 @@ def best_question(goal: str, path: str | None = None) -> dict:
     question_resp = litellm.completion(
         model=CHAT_MODEL,
         messages=[{"role": "user", "content": question_prompt}],
-        api_base=LITELLM_URL,
+        api_base=_api_base(),
         max_tokens=200,
     )
     the_question = question_resp.choices[0].message.content.strip()
@@ -281,6 +280,88 @@ def best_question(goal: str, path: str | None = None) -> dict:
         "relevant_symbols": [g["symbol"] for g in graph_ctx],
         "relevant_files": list(set(g["file"] for g in graph_ctx)),
     }
+
+
+def read_recent(scope: str | None = None, days: int = 7) -> list[dict]:
+    """What changed recently? Uses git log to find recently modified symbols.
+
+    Returns recently changed files with their modified symbols cross-referenced
+    against the indexed knowledge in Qdrant/FalkorDB.
+    """
+    cmd = [
+        "git", "log",
+        f"--since={days} days ago",
+        "--name-only",
+        "--pretty=format:%H|%an|%s|%ai",
+        "--diff-filter=AMR",
+    ]
+    if scope:
+        cmd.append("--")
+        cmd.append(scope)
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30,
+            cwd=scope or ".",
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+
+    commits = []
+    current_commit = None
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if "|" in line and len(line.split("|")) >= 4:
+            parts = line.split("|", 3)
+            current_commit = {
+                "hash": parts[0][:8],
+                "author": parts[1],
+                "message": parts[2],
+                "date": parts[3],
+                "files": [],
+            }
+            commits.append(current_commit)
+        elif current_commit is not None:
+            current_commit["files"].append(line)
+
+    # Cross-reference changed files with indexed symbols
+    grapher = get_grapher()
+    recent = []
+    seen_files = set()
+
+    for commit in commits:
+        for f in commit["files"]:
+            if f in seen_files:
+                continue
+            seen_files.add(f)
+
+            symbols = []
+            try:
+                qresult = grapher.graph.query(
+                    "MATCH (f:File {path: $path})-[:DEFINES]->(s:Symbol) "
+                    "RETURN s.name, s.kind, s.signature, s.line",
+                    {"path": f},
+                )
+                symbols = [
+                    {"name": r[0], "kind": r[1], "signature": r[2], "line": r[3]}
+                    for r in qresult.result_set
+                ]
+            except Exception:
+                pass
+
+            recent.append({
+                "file": f,
+                "last_commit": commit["hash"],
+                "author": commit["author"],
+                "message": commit["message"],
+                "date": commit["date"],
+                "symbols_in_file": symbols,
+            })
+
+    return recent
 
 
 def _build_context(chunks: list[dict], graph_ctx: list[dict]) -> str:
@@ -319,7 +400,7 @@ def _synthesize(question: str, context: str) -> str:
     resp = litellm.completion(
         model=CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        api_base=LITELLM_URL,
+        api_base=_api_base(),
         max_tokens=2000,
     )
     return resp.choices[0].message.content

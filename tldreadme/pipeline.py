@@ -7,6 +7,7 @@ from rich.progress import Progress
 from .parser import parse_directory
 from .embedder import CodeEmbedder, symbols_to_chunks
 from .grapher import CodeGrapher
+from .hot_index import build_hot_index
 from .generator import generate_claude_md
 
 console = Console()
@@ -44,14 +45,22 @@ def run_init(directory: Path, output_dir: str = ".claude"):
     total_imports = sum(len(r.imports) for r in results)
     console.print(f"  Graphed [bold]{total_calls}[/] call edges, [bold]{total_imports}[/] imports\n")
 
-    # 4. Generate TLDR.md
+    # 4. Build hot index (top 100 symbols cached for instant lookup)
+    console.print("[dim]Building hot index...[/]")
+    hot_idx = build_hot_index(directory, results)
+    hot_path = directory / ".tldr"
+    hot_path.mkdir(exist_ok=True)
+    hot_idx.save(hot_path / "hot_index.json")
+    console.print(f"  Cached [bold]{len(hot_idx.entries)}[/] hot symbols\n")
+
+    # 5. Generate TLDR.md
     console.print("[dim]Generating context files...[/]")
     claude_path = generate_claude_md(directory, output_dir=output_dir)
     console.print(f"  Written: [bold]{claude_path}[/]\n")
 
     # Summary
     console.print("[bold green]Done.[/] Your codebase is now KNOWN.\n")
-    console.print(f"  MCP server:  [dim]tldreadme serve[/]")
-    console.print(f"  Watch mode:  [dim]tldreadme watch {directory}[/]")
-    console.print(f"  Ask:         [dim]tldreadme ask \"how does X work?\"[/]")
+    console.print(f"  MCP server:  [dim]tldr serve[/]")
+    console.print(f"  Watch mode:  [dim]tldr watch {directory}[/]")
+    console.print(f"  Ask:         [dim]tldr ask \"how does X work?\"[/]")
     console.print()
