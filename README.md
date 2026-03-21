@@ -1,12 +1,13 @@
-# TLDREADME
-
+# 
+# TLDREADME.md
+#
 **TL;DR for any codebase. Makes LLMs KNOW your code.**
 
 Point it at a directory. It parses every function, embeds it, graphs the relationships, and serves it all via MCP. Claude Code (or any LLM) stops searching and starts *knowing*.
 
 ```
 tldreadme init /path/to/your/code    # parse, embed, graph, generate TLDR.md
-tldreadme serve                       # MCP server — Claude just KNOWs
+tldreadme serve                       # MCP server — So your coder just KNOWs
 tldreadme watch /path/to/your/code   # stay current on file saves
 tldreadme ask "how does X work?"     # RAG-powered answer from CLI
 ```
@@ -92,6 +93,7 @@ tldreadme init /path/to/your/project
 ```
 
 This will:
+
 1. Parse all code via tree-sitter (TypeScript, JavaScript, Python, Rust + 8 more)
 2. Extract dependencies from Cargo.toml, package.json, go.mod, pyproject.toml
 3. Embed symbols into Qdrant
@@ -117,6 +119,19 @@ Add to your Claude Code MCP config:
 ## LLM Backend
 
 Default: local Ollama (`qwen2.5-coder:3b-instruct` for synthesis, `nomic-embed-text` for embeddings).
+
+We advise larger parameter models if possible for local code inference. 
+
+Qwen Examples:
+    Model    		Size(Q4)   RAM needed
+   qwen2.5-coder:3b     1.9G         ~4GB     
+   qwen2.5-coder:7b     4.7G         ~8GB     
+   qwen2.5-coder:14b    9GB         ~12GB     
+   qwen2.5-coder:32b    20GB        ~24GB     
+   qwen3-coder-next     46GB        ~48GB     
+
+32B if you can, 7b works fine for code intel. 
+
 
 To use cloud providers, set env vars and uncomment in `litellm-config.yaml`:
 
@@ -152,7 +167,7 @@ tldreadme/
 ├── chains.py       # daisy-chained tool sequences (know, impact, discover, explain)
 ├── generator.py    # TLDR.md generator from indexed knowledge
 ├── watcher.py      # fswatch incremental re-indexing
-├── pipeline.py     # orchestrates: parse → embed → graph → generate
+├── pipeline.py     # orchestrates: parse → embed → graph → ge
 └── mcp_server.py   # 16 MCP tools
 ```
 
@@ -160,10 +175,8 @@ tldreadme/
 
 - **Intelligence in, intelligence out.** The quality of TLDR.md determines how smart the LLM is about your code.
 - **Search before writing.** `read_similar` and `discover` exist so you don't reinvent what already exists.
-- **Backwards-first.** The code knows what it needs. `suggest_goals` and `best_question` extract that knowledge.
+- **Backwards-first.** The code knows what it needs. `suggest_goals` and `best_question` extract that knowledge; steer end results.
 - **Start fast, go deeper only when needed.** `know` (instant) before `explain` (LLM). `impact` (fast) before refactoring.
-- **Scan your code, catalog your deps, fetch docs on demand.** Never parse node_modules.
+- **Scan your code, catalog your deps, fetch docs on demand.** Never parse node_modules or libraries when scanning.
 
-## License
-
-MIT
+## License: MIT
