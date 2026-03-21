@@ -316,14 +316,16 @@ def start_server(port: int = 8900):
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         elif name == "read_depends":
-            from .grapher import CodeGrapher
-            grapher = CodeGrapher()
-            result = grapher.get_dependents(arguments["name"])
+            from ._shared import get_grapher
+            result = get_grapher().get_dependents(arguments["name"])
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         elif name == "read_recent":
-            # TODO: integrate with git log for temporal awareness
-            return [TextContent(type="text", text="read_recent not yet wired to git")]
+            result = rag.read_recent(
+                scope=arguments.get("scope"),
+                days=arguments.get("days", 7),
+            )
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         elif name == "read_grep":
             from .search import rg_search, format_hits_for_llm

@@ -1,4 +1,4 @@
-"""CLI entry point — tldreadme init|watch|serve|ask"""
+"""CLI entry point — tldr init|watch|serve|ask"""
 
 import click
 from pathlib import Path

@@ -12,7 +12,7 @@ class CodeGrapher:
     """Builds and queries the code knowledge graph in FalkorDB."""
 
     def __init__(self, url: str = None):
-        url = url or os.getenv("FALKORDB_URL", "redis://localhost:6379")
+        url = url or os.getenv("FALKORDB_URL", "redis://localhost:16379")
         self.db = FalkorDB(url=url)
         self.graph = self.db.select_graph(GRAPH_NAME)
         self._ensure_schema()

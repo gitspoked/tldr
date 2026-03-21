@@ -19,14 +19,9 @@ build/
 *.swo
 .DS_Store
 
-# Data (local state, not shipped)
+# Data — all local state lives under .tldr/
+# (hot_index.json, qdrant storage, falkordb storage)
+.tldr/
 *.qbdw
 *.jsonl
-hot_index.json
-
-# Docker volumes
-qdrant_data/
-falkordb_data/
-ollama_data/
-blah.tmp
 *.tmp

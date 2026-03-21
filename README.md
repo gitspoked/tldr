@@ -6,10 +6,10 @@
 Point it at a directory. It parses every function, embeds it, graphs the relationships, and serves it all via MCP. Claude Code (or any LLM) stops searching and starts *knowing*.
 
 ```
-tldreadme init /path/to/your/code    # parse, embed, graph, generate TLDR.md
-tldreadme serve                       # MCP server — So your coder just KNOWs
-tldreadme watch /path/to/your/code   # stay current on file saves
-tldreadme ask "how does X work?"     # RAG-powered answer from CLI
+tldr init /path/to/your/code    # parse, embed, graph, generate TLDR.md
+tldr serve                       # MCP server — So your coder just KNOWs
+tldr watch /path/to/your/code   # stay current on file saves
+tldr ask "how does X work?"     # RAG-powered answer from CLI
 ```
 
 ## What It Does
@@ -81,15 +81,16 @@ python3.12 -m venv .venv
 
 ```bash
 docker compose up -d
-# Wait for Ollama, then pull models:
-docker exec -it tldreadme-ollama-1 ollama pull nomic-embed-text
-docker exec -it tldreadme-ollama-1 ollama pull qwen2.5-coder:3b-instruct
+
+# Ollama runs natively (not in Docker) — pull models locally:
+ollama pull nomic-embed-text
+ollama pull qwen2.5-coder:3b-instruct
 ```
 
 ### Index a Codebase
 
 ```bash
-tldreadme init /path/to/your/project
+tldr init /path/to/your/project
 ```
 
 This will:

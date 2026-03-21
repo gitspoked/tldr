@@ -68,7 +68,7 @@ def build_hot_index(root: Path, parse_results: list[ParseResult], top_n: int = 1
     1. Rank symbols by importance (callers, size, centrality)
     2. Take top N
     3. rg-scan each one to cache every location
-    4. Persist to .tldreadme/hot_index.json
+    4. Persist to .tldr/hot_index.json
     """
     index = HotIndex(root=str(root))
 

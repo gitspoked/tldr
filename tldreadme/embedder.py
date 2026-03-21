@@ -1,5 +1,6 @@
 """Embed code chunks into Qdrant via LiteLLM."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
@@ -10,8 +11,17 @@ import os
 from .parser import Symbol, ParseResult
 
 COLLECTION = "tldreadme_code"
-EMBED_MODEL = "embed"  # routes through LiteLLM to whatever backend
-LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:4000")
+
+# Default: talk directly to local Ollama. If LITELLM_URL is set, route through LiteLLM proxy.
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+LITELLM_URL = os.getenv("LITELLM_URL", "")
+EMBED_MODEL = os.getenv("TLDREADME_EMBED_MODEL", "ollama/nomic-embed-text")
+CHAT_MODEL = os.getenv("TLDREADME_CHAT_MODEL", "ollama/qwen2.5-coder:3b-instruct")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:16333")
+
+def _api_base():
+    """Return API base — LiteLLM proxy if configured, otherwise direct Ollama."""
+    return LITELLM_URL if LITELLM_URL else OLLAMA_URL
 
 
 @dataclass
@@ -30,8 +40,14 @@ class CodeChunk:
 
 
 def chunk_id(file: str, name: str, line: int) -> str:
+    """Deterministic ID for a code chunk — same symbol at same location = same ID."""
     raw = f"{file}:{name}:{line}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _chunk_id_to_int(hex_id: str) -> int:
+    """Convert hex chunk ID to integer for Qdrant point ID."""
+    return int(hex_id, 16)
 
 
 def symbols_to_chunks(results: list[ParseResult]) -> list[CodeChunk]:
@@ -59,30 +75,41 @@ def embed_text(text: str) -> list[float]:
     resp = litellm.embedding(
         model=EMBED_MODEL,
         input=[text],
-        api_base=LITELLM_URL,
+        api_base=_api_base(),
     )
     return resp.data[0]["embedding"]
 
 
-def embed_batch(texts: list[str], batch_size: int = 32) -> list[list[float]]:
-    """Embed a batch of texts."""
+def _embed_one_batch(batch: list[str]) -> list[list[float]]:
+    """Embed a single batch — used as a unit of work for parallel execution."""
+    resp = litellm.embedding(
+        model=EMBED_MODEL,
+        input=batch,
+        api_base=_api_base(),
+    )
+    return [d["embedding"] for d in resp.data]
+
+
+def embed_batch(texts: list[str], batch_size: int = 32, max_workers: int = 4) -> list[list[float]]:
+    """Embed texts in parallel batches."""
+    batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
+
+    if len(batches) <= 1:
+        # Single batch — no threading overhead
+        return _embed_one_batch(batches[0]) if batches else []
+
     all_embeddings = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        resp = litellm.embedding(
-            model=EMBED_MODEL,
-            input=batch,
-            api_base=LITELLM_URL,
-        )
-        all_embeddings.extend([d["embedding"] for d in resp.data])
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for result in executor.map(_embed_one_batch, batches):
+            all_embeddings.extend(result)
     return all_embeddings
 
 
 class CodeEmbedder:
     """Manages embedding storage in Qdrant."""
 
-    def __init__(self, qdrant_url: str = "http://localhost:6333"):
-        self.client = QdrantClient(url=qdrant_url)
+    def __init__(self, qdrant_url: str = None):
+        self.client = QdrantClient(url=qdrant_url or QDRANT_URL)
         self._ensure_collection()
 
     def _ensure_collection(self):
@@ -115,11 +142,12 @@ class CodeEmbedder:
             )
             self._collection_created = True
 
-        # Upsert points
+        # Upsert points — use deterministic chunk_id so re-indexing updates
+        # in place instead of creating duplicates
         points = []
-        for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
+        for chunk, vector in zip(chunks, vectors):
             points.append(PointStruct(
-                id=i,  # qdrant needs int or uuid
+                id=_chunk_id_to_int(chunk.id),
                 vector=vector,
                 payload={
                     "chunk_id": chunk.id,
@@ -139,12 +167,12 @@ class CodeEmbedder:
     def search_similar(self, query: str, limit: int = 10) -> list[dict]:
         """Find code chunks semantically similar to a query."""
         query_vector = embed_text(query)
-        results = self.client.search(
+        results = self.client.query_points(
             collection_name=COLLECTION,
-            query_vector=query_vector,
+            query=query_vector,
             limit=limit,
         )
         return [
             {**hit.payload, "score": hit.score}
-            for hit in results
+            for hit in results.points
         ]

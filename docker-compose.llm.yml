@@ -9,7 +9,7 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - ./.tldr/qdrant:/qdrant/storage
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
       interval: 10s
@@ -21,7 +21,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - falkordb_data:/data
+      - ./.tldr/falkordb:/data
     command: >
       --maxmemory 2gb
       --maxmemory-policy allkeys-lru
@@ -49,7 +49,3 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-
-volumes:
-  qdrant_data:
-  falkordb_data:

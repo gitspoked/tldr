@@ -76,8 +76,8 @@ Verify:
 
 ```bash
 docker compose ps                          # both healthy
-curl -s http://localhost:6333/healthz       # Qdrant
-redis-cli -p 6379 ping                     # FalkorDB → PONG
+curl -s http://localhost:16333/healthz      # Qdrant
+redis-cli -p 16379 ping                    # FalkorDB → PONG
 curl -s http://localhost:11434/api/tags     # Ollama → your models
 ```
 
@@ -85,7 +85,7 @@ curl -s http://localhost:11434/api/tags     # Ollama → your models
 
 ```bash
 source .venv/bin/activate
-tldreadme init /path/to/your/project
+tldr init /path/to/your/project
 ```
 
 Output:
@@ -146,7 +146,7 @@ If Claude calls the MCP tool and returns code — you're set.
 Keep the index fresh as you code:
 
 ```bash
-tldreadme watch /path/to/your/project
+tldr watch /path/to/your/project
 ```
 
 On file save: re-parses the changed file, updates embeddings and graph automatically.
@@ -180,10 +180,10 @@ This gives you Qdrant + FalkorDB + LiteLLM (port 4000). Set `LITELLM_URL=http://
 | Command | What |
 |---------|------|
 | `docker compose up -d` | Start Qdrant + FalkorDB |
-| `tldreadme init /path` | Index a codebase |
-| `tldreadme serve` | Start MCP server |
-| `tldreadme watch /path` | Auto re-index on saves |
-| `tldreadme ask "question"` | RAG answer from CLI |
+| `tldr init /path` | Index a codebase |
+| `tldr serve` | Start MCP server |
+| `tldr watch /path` | Auto re-index on saves |
+| `tldr ask "question"` | RAG answer from CLI |
 
 ## Two Docker Compose Files
 
@@ -204,4 +204,4 @@ This gives you Qdrant + FalkorDB + LiteLLM (port 4000). Set `LITELLM_URL=http://
 
 **Parse is slow on first run** — Normal for large codebases. Subsequent `watch` updates are incremental and fast.
 
-**Port 6379 conflict (Redis)** — FalkorDB uses Redis protocol. If you already run Redis, change the port in docker-compose.yml: `"6380:6379"`
+**Port 16379 conflict** — FalkorDB uses Redis protocol on port 16379 (non-standard to avoid conflicts). If still colliding, change in docker-compose.yml: `"16380:6379"`

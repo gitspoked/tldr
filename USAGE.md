@@ -196,10 +196,10 @@ The full backwards chain in one call: analyze code → suggest goals → pick th
 docker compose up -d
 
 # Index a codebase
-tldreadme init /Volumes/Expansion/Qubed/libqubed
+tldr init /Volumes/Expansion/Qubed/libqubed
 
 # Start the MCP server (Claude Code connects here)
-tldreadme serve
+tldr serve
 ```
 
 `init` does: parse all code (tree-sitter) → embed symbols (Qdrant) → build call/import/dependency graph (FalkorDB) → build hot index (top 100 symbols cached) → generate TLDR.md.
@@ -207,7 +207,7 @@ tldreadme serve
 ### Watch mode (keep it current)
 
 ```bash
-tldreadme watch /Volumes/Expansion/Qubed/libqubed
+tldr watch /Volumes/Expansion/Qubed/libqubed
 ```
 
 Watches for file saves. On change: re-parse that file → update its embeddings → update graph edges → update hot index if affected. Incremental, not full rescan.

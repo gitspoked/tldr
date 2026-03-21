@@ -50,7 +50,7 @@ class CodeChangeHandler(FileSystemEventHandler):
         if not result:
             return
 
-        print(f"[tldreadme] re-indexing: {path_str} ({len(result.symbols)} symbols)")
+        print(f"[tldr] re-indexing: {path_str} ({len(result.symbols)} symbols)")
 
         # Update embeddings
         chunks = symbols_to_chunks([result])
@@ -68,11 +68,11 @@ def start_watcher(directories: list[Path]):
 
     observer = Observer()
     for d in directories:
-        print(f"[tldreadme] watching: {d}")
+        print(f"[tldr] watching: {d}")
         observer.schedule(handler, str(d), recursive=True)
 
     observer.start()
-    print(f"[tldreadme] watcher running. Ctrl+C to stop.")
+    print(f"[tldr] watcher running. Ctrl+C to stop.")
 
     try:
         while True:
