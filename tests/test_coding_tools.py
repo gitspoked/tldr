@@ -490,18 +490,29 @@ def test_scan_context_reports_repo_surfaces(monkeypatch, tmp_path):
     code_file = root / "src" / "service.py"
     test_file = root / "tests" / "test_service.py"
     generated = root / ".claude" / "TLDR.md"
+    roadmap_doc = root / "TLDROADMAP.md"
+    notes_doc = root / "TLDRNOTES.md"
+    plans_doc = root / ".tldr" / "roadmap" / "TLDRPLANS.md"
 
     code_file.parent.mkdir(parents=True)
     test_file.parent.mkdir(parents=True)
     generated.parent.mkdir(parents=True)
+    plans_doc.parent.mkdir(parents=True)
     code_file.write_text("def service():\n    return 1\n", encoding="utf-8")
     test_file.write_text("def test_service():\n    assert True\n", encoding="utf-8")
     generated.write_text("# TLDR\n", encoding="utf-8")
+    roadmap_doc.write_text("# TLDROADMAP\n\nRoadmap intent.\n", encoding="utf-8")
+    notes_doc.write_text("# Notes\n\nTactical caveat.\n", encoding="utf-8")
+    plans_doc.write_text("# TLDRPLANS\n\nCurrent digest.\n", encoding="utf-8")
 
     monkeypatch.setattr(
         coding_tools,
         "_context_docs_for_root",
-        lambda _root: [type("Doc", (), {"file": str(root / "README.md")})()],
+        lambda _root: [
+            type("Doc", (), {"file": str(roadmap_doc)})(),
+            type("Doc", (), {"file": str(notes_doc)})(),
+            type("Doc", (), {"file": str(plans_doc)})(),
+        ],
     )
     monkeypatch.setattr(coding_tools, "_code_files", lambda _root: [code_file])
     monkeypatch.setattr(coding_tools, "_test_files", lambda _root: [test_file])
@@ -548,10 +559,13 @@ def test_scan_context_reports_repo_surfaces(monkeypatch, tmp_path):
     result = coding_tools.scan_context(root=str(root))
 
     assert result["source_counts"]["code"] == 1
-    assert result["source_counts"]["docs"] == 1
+    assert result["source_counts"]["docs"] == 3
     assert result["source_counts"]["workboard"] == 2
     assert result["source_counts"]["children"] == 1
     assert result["children"]["unknown_count"] == 1
+    docs_surface = next(item for item in result["surfaces"] if item["source_type"] == "docs")
+    assert "TLDROADMAP.md" in docs_surface["examples"]
+    assert "TLDRNOTES.md" in docs_surface["examples"]
     assert result["next_best_tool"] == "search_context"
     assert result["verification_commands"] == ["python -m pytest -q"]
     assert result["fallback_used"] == []
@@ -626,6 +640,31 @@ def test_search_context_ranks_across_surfaces(monkeypatch, tmp_path):
     assert result["verification_commands"] == ["python -m pytest -q tests/test_service.py"]
     assert result["next_best_tool"] == "edit_context"
     assert "recent_hits_unavailable" in result["fallback_used"]
+
+
+def test_search_context_surfaces_roadmap_notes_and_plans_docs(monkeypatch, tmp_path):
+    root = tmp_path
+    (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    (root / "TLDROADMAP.md").write_text("# TLDROADMAP\n\n## North Star\n\nAudit is the next strategic capability.\n", encoding="utf-8")
+    (root / "TLDRNOTES.md").write_text("# Notes\n\nAudit caveat: keep it local-first.\n", encoding="utf-8")
+    plans_path = root / ".tldr" / "roadmap" / "TLDRPLANS.md"
+    plans_path.parent.mkdir(parents=True)
+    plans_path.write_text("# TLDRPLANS\n\n## Grounded Next Goals\n\nAdd local audit coverage.\n", encoding="utf-8")
+
+    monkeypatch.setattr(coding_tools, "_code_context_hits", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(coding_tools, "_workboard_context_hits", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(coding_tools, "_children_snapshot", lambda *_args, **_kwargs: {"children": []})
+    monkeypatch.setattr(coding_tools, "_recent_context_hits", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(coding_tools, "test_map", lambda **_kwargs: {"verification_commands": []})
+
+    result = coding_tools.search_context("audit", root=str(root))
+
+    assert result["ranked_hits"]
+    paths = {Path(item["path"]).name for item in result["ranked_hits"]}
+    assert "TLDROADMAP.md" in paths
+    assert "TLDRNOTES.md" in paths
+    assert "TLDRPLANS.md" in paths
+    assert "docs" in result["grouped_hits"]
 
 
 def test_search_context_can_surface_child_projects(monkeypatch, tmp_path):

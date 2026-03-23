@@ -55,6 +55,12 @@ def _children():
     return load_module("tldreadme.children")
 
 
+def _roadmap():
+    """Load the roadmap/planning helpers only when needed."""
+
+    return load_module("tldreadme.roadmap")
+
+
 def _tool_meta(
     *,
     category: str,
@@ -125,6 +131,9 @@ TOOL_METADATA = {
     "best_question": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["repo_lookup", "change_plan"]),
     "goal_flow": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["suggest_goals", "best_question"]),
     "auto_iterate": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["goal_flow"]),
+    "capture_plans": _tool_meta(category="planning", priority="advanced", read_only=False, latency="fast", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["whats_next", "current_roadmap"]),
+    "whats_next": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["repo_next_action", "repo_lookup"]),
+    "current_roadmap": _tool_meta(category="planning", priority="advanced", read_only=False, latency="medium", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["whats_next"]),
 }
 
 TOOL_REQUIRED_BACKENDS = {
@@ -360,6 +369,24 @@ def _list_static_resources(tool_profile: str = DEFAULT_TOOL_PROFILE) -> list[Res
             mimeType="application/json",
         ),
         Resource(
+            name="roadmap",
+            uri="repo://roadmap",
+            description="Durable roadmap document, including preserved human-owned and generated sections.",
+            mimeType="application/json",
+        ),
+        Resource(
+            name="notes",
+            uri="repo://notes",
+            description="Tactical continuity notes for humans and agents resuming work.",
+            mimeType="application/json",
+        ),
+        Resource(
+            name="plans-digest",
+            uri="repo://plans-digest",
+            description="Consolidated TLDRPLANS digest built from captured notes and grounded planning signals.",
+            mimeType="application/json",
+        ),
+        Resource(
             name="session-current",
             uri="repo://session/current",
             description="Canonical current session snapshot with active-plan, overlap, and note context.",
@@ -502,6 +529,15 @@ def _read_resource_text(uri: str, tool_profile: str = DEFAULT_TOOL_PROFILE, capa
 
     if target == "plans":
         return json.dumps(_workboard().list_plans(), indent=2)
+
+    if target == "roadmap":
+        return json.dumps(_roadmap().read_roadmap(), indent=2)
+
+    if target == "notes":
+        return json.dumps(_roadmap().read_notes(), indent=2)
+
+    if target == "plans-digest":
+        return json.dumps(_roadmap().read_plans_digest(), indent=2)
 
     if target == "session" and path_value == "current":
         return json.dumps(_workboard().current_plan(), indent=2)
@@ -897,6 +933,50 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                         "rounds": {"type": "integer", "description": "Iteration count", "default": 2},
                     },
                     "required": ["path"],
+                },
+            ),
+            Tool(
+                name="capture_plans",
+                description=(
+                    "FULL PROFILE. Persist a planning note drop into .tldr/roadmap and refresh the TLDRPLANS digest. "
+                    "This is the MCP equivalent of `tldr plans-capture`, but takes the note text directly instead of stdin."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "Planning notes, links, examples, or pasted context"},
+                        "root": {"type": "string", "description": "Repository root (optional)"},
+                    },
+                    "required": ["text"],
+                },
+            ),
+            Tool(
+                name="whats_next",
+                description=(
+                    "FULL PROFILE. Build the current grounded next-question / next-options planning snapshot for humans or agents."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "root": {"type": "string", "description": "Repository root (optional)"},
+                    },
+                },
+            ),
+            Tool(
+                name="current_roadmap",
+                description=(
+                    "FULL PROFILE. Refresh the durable roadmap snapshot and optionally write TLDROADMAP.md while preserving the human-owned top section."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "root": {"type": "string", "description": "Repository root (optional)"},
+                        "write": {
+                            "type": "boolean",
+                            "description": "Whether to write TLDROADMAP.md and refresh the TLDRPLANS digest",
+                            "default": False,
+                        },
+                    },
                 },
             ),
             Tool(
@@ -1761,6 +1841,21 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 path=arguments["path"],
                 goal=arguments.get("goal"),
                 rounds=arguments.get("rounds", 2),
+            )
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
+        if name == "capture_plans":
+            result = _roadmap().capture_plan_input(arguments["text"], root=arguments.get("root", "."))
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
+        if name == "whats_next":
+            result = _roadmap().whats_next_vibe(root=arguments.get("root", "."))
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
+        if name == "current_roadmap":
+            result = _roadmap().build_current_vibe_roadmap(
+                root=arguments.get("root", "."),
+                write=arguments.get("write", False),
             )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
