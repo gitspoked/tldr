@@ -1,0 +1,324 @@
+"""Tests for CLI entry points."""
+
+from click.testing import CliRunner
+from tldreadme.cli import main
+from tldreadme import cli
+
+
+def test_cli_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["--help"])
+    assert result.exit_code == 0
+    assert "TLDREADME" in result.output
+    assert "children" in result.output
+    assert "lsp" not in result.output
+    assert "lsp-symbols" not in result.output
+
+
+def test_cli_init_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["init", "--help"])
+    assert result.exit_code == 0
+    assert "DIRECTORY" in result.output
+
+
+def test_cli_serve_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["serve", "--help"])
+    assert result.exit_code == 0
+    assert "--transport" in result.output
+    assert "--port" in result.output
+    assert "--tool-profile" in result.output
+    assert "SSE" in result.output
+
+
+def test_cli_watch_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["watch", "--help"])
+    assert result.exit_code == 0
+
+
+def test_cli_ask_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["ask", "--help"])
+    assert result.exit_code == 0
+    assert "QUESTION" in result.output
+
+
+def test_cli_lsp_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["lsp", "--help"])
+    assert result.exit_code == 0
+    assert "LINE" in result.output
+    assert "--column" in result.output
+
+
+def test_cli_lsp_symbols_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["lsp-symbols", "--help"])
+    assert result.exit_code == 0
+    assert "QUERY" in result.output
+    assert "--limit" in result.output
+
+
+def test_cli_summary_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["summary", "--help"])
+    assert result.exit_code == 0
+    assert "--since" in result.output
+    assert "--no-mark-checked" in result.output
+
+
+def test_cli_children_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["children", "--help"])
+    assert result.exit_code == 0
+    assert "list" in result.output
+    assert "merge" in result.output
+    assert "ignore" in result.output
+
+
+def test_cli_doctor_runs():
+    runner = CliRunner()
+    result = runner.invoke(main, ["doctor"])
+    assert result.exit_code == 0
+    assert "tree-sitter" in result.output
+    assert "ripgrep" in result.output
+    assert "doctor --fix" in result.output
+
+
+def test_cli_doctor_diagnostics(monkeypatch, tmp_path):
+    source = tmp_path / "sample.py"
+    source.write_text("def sample():\n    return 1\n")
+
+    monkeypatch.setattr(
+        "tldreadme.runtime.runtime_report",
+        lambda: {
+            "ok": True,
+            "checks": [
+                {
+                    "name": "python",
+                    "status": "ok",
+                    "ok": True,
+                    "details": "3.12.12",
+                    "category": "runtime",
+                    "required": True,
+                    "install_options": [],
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "tldreadme.coding_tools.diagnostics_here",
+        lambda *_args, **_kwargs: {
+            "path": str(source),
+            "diagnostics": [{"path": str(source), "line": 1, "severity": "warning", "message": "possible issue"}],
+            "likely_fix_area": {"path": str(source), "line": 1, "severity": "warning"},
+            "impacted_symbols": ["sample"],
+            "verification_commands": ["python -m pytest -q tests/test_sample.py"],
+            "fallback_used": [],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["doctor", "--diagnostics", str(source), "--line", "1"])
+
+    assert result.exit_code == 0
+    assert "Diagnostics:" in result.output
+    assert "WARNING:" in result.output
+    assert "Likely fix area:" in result.output
+    assert "Impacted symbols: sample" in result.output
+
+
+def test_cli_doctor_fix_prints_install_options(monkeypatch):
+    runner = CliRunner()
+
+    monkeypatch.setattr(
+        "tldreadme.runtime.runtime_report",
+        lambda: {
+            "ok": True,
+            "checks": [
+                {
+                    "name": "Python LSP",
+                    "status": "warn",
+                    "ok": False,
+                    "details": "missing",
+                    "category": "lsp",
+                    "required": False,
+                    "install_options": [
+                        {"label": "Install basedpyright via npm", "command": "npm install -g basedpyright"},
+                    ],
+                }
+            ],
+        },
+    )
+
+    result = runner.invoke(main, ["doctor", "--fix"])
+    assert result.exit_code == 0
+    assert "[ ] 1. Python LSP [lsp]" in result.output
+    assert "npm install -g basedpyright" in result.output
+    assert "non-interactive" in result.output
+
+
+def test_select_doctor_fix_items_uses_questionary(monkeypatch):
+    class FakePrompt:
+        def __init__(self, values):
+            self.values = values
+
+        def ask(self):
+            return self.values
+
+    class FakeQuestionary:
+        @staticmethod
+        def Choice(title, value):
+            return {"title": title, "value": value}
+
+        @staticmethod
+        def checkbox(_message, choices, **_kwargs):
+            return FakePrompt([choices[0]["value"]])
+
+    checks = [
+        {
+            "name": "Python LSP",
+            "category": "lsp",
+            "install_options": [
+                {"label": "Install basedpyright via npm", "command": "npm install -g basedpyright"},
+            ],
+        }
+    ]
+
+    monkeypatch.setattr(cli, "_load_questionary", lambda: FakeQuestionary())
+
+    selected = cli._select_doctor_fix_items(checks)
+
+    assert selected == checks
+
+
+def test_cli_lsp_invokes_semantic_query(monkeypatch, tmp_path):
+    source = tmp_path / "sample.py"
+    source.write_text("def sample():\n    return 1\n")
+
+    monkeypatch.setattr(
+        "tldreadme.lsp.semantic_inspect",
+        lambda *args, **kwargs: {
+            "path": args[0],
+            "line": args[1],
+            "column": args[2],
+            "hover": "hover text",
+            "definitions": [],
+            "references": [],
+            "document_symbols": [],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["lsp", str(source), "1", "--column", "5"])
+
+    assert result.exit_code == 0
+    assert "hover text" in result.output
+
+
+def test_cli_lsp_symbols_invokes_workspace_query(monkeypatch, tmp_path):
+    source = tmp_path / "sample.py"
+    source.write_text("def sample():\n    return 1\n")
+
+    monkeypatch.setattr(
+        "tldreadme.lsp.workspace_symbols",
+        lambda *args, **kwargs: {
+            "path": args[0],
+            "query": args[1],
+            "symbols": [{"name": "sample"}],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["lsp-symbols", str(source), "sample"])
+
+    assert result.exit_code == 0
+    assert "\"name\": \"sample\"" in result.output
+
+
+def test_cli_summary_renders_report(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.summary.build_summary",
+        lambda **_kwargs: {
+            "since": "2026-03-22T00:00:00+00:00",
+            "updated_checkpoint": "2026-03-22T01:00:00+00:00",
+            "counts": {"commits": 1, "working_tree_changes": 1, "tasks": 1, "session_notes": 1},
+            "commits": [{"short_commit": "abc123", "subject": "Add summary command"}],
+            "working_tree": [{"status": " M", "path": "tldreadme/cli.py"}],
+            "workboard": {"plans": [], "tasks": [], "session_notes": []},
+        },
+    )
+    monkeypatch.setattr(
+        "tldreadme.summary.render_summary",
+        lambda payload: f"Summary since {payload['since']}\nCounts: 1 commit",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["summary", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Summary since 2026-03-22T00:00:00+00:00" in result.output
+
+
+def test_cli_children_list_renders_report(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.children.list_children",
+        lambda **_kwargs: {
+            "count": 1,
+            "unknown_count": 1,
+            "merged_count": 0,
+            "ignored_count": 0,
+            "children": [
+                {
+                    "path": "redocoder",
+                    "status": "unknown",
+                    "manifests": ["package.json"],
+                    "context_docs": ["README.md"],
+                    "has_git": False,
+                    "code_file_count": 12,
+                    "note": None,
+                }
+            ],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["children", "list", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "UNKNOWN: redocoder" in result.output
+    assert "package.json" in result.output
+
+
+def test_cli_children_merge_marks_child(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.children.merge_child",
+        lambda *_args, **_kwargs: {
+            "path": "redocoder",
+            "status": "merged",
+            "manifests": ["package.json"],
+            "context_docs": ["README.md"],
+            "has_git": False,
+            "code_file_count": 12,
+            "note": "Imported intentionally",
+        },
+    )
+    monkeypatch.setattr(
+        "tldreadme.children.describe_child",
+        lambda payload: f"manifests: {payload['manifests'][0]}; note: {payload['note']}",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["children", "merge", "redocoder", "--root", str(tmp_path), "--note", "Imported intentionally"])
+
+    assert result.exit_code == 0
+    assert "MERGED: redocoder" in result.output
+    assert "Imported intentionally" in result.output
+
+
+def test_cli_unknown_command():
+    runner = CliRunner()
+    result = runner.invoke(main, ["nonexistent"])
+    assert result.exit_code != 0

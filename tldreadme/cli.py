@@ -1,7 +1,9 @@
 """CLI entry point — tldr init|watch|serve|ask"""
 
 import click
+import json
 from pathlib import Path
+import sys
 
 
 @click.group()
@@ -20,7 +22,10 @@ def init(directory: str, output: str):
     call/import/data-flow graphs in FalkorDB, then generates
     context files that make any LLM immediately understand the codebase.
     """
+    from .runtime import ensure_tree_sitter_runtime
     from .pipeline import run_init
+
+    ensure_tree_sitter_runtime()
     run_init(Path(directory), output_dir=output)
 
 
@@ -33,16 +38,34 @@ def watch(directories: tuple[str, ...]):
     in Qdrant, update graph edges in FalkorDB, regenerate affected
     TLDR.md sections.
     """
+    from .runtime import ensure_tree_sitter_runtime
     from .watcher import start_watcher
+
+    ensure_tree_sitter_runtime()
     start_watcher([Path(d) for d in directories])
 
 
 @main.command()
-@click.option("--port", "-p", default=8900, help="MCP server port")
-def serve(port: int):
-    """Start the MCP server. Claude Code connects here to KNOW the code."""
+@click.option(
+    "--transport",
+    type=click.Choice(["stdio", "sse"], case_sensitive=False),
+    default="stdio",
+    show_default=True,
+    help="MCP transport. Use stdio for Claude Code subprocesses or sse for network clients.",
+)
+@click.option("--host", default="127.0.0.1", show_default=True, help="Bind host for SSE transport")
+@click.option("--port", "-p", default=8900, show_default=True, help="Bind port for SSE transport")
+@click.option(
+    "--tool-profile",
+    type=click.Choice(["router", "full"], case_sensitive=False),
+    default="router",
+    show_default=True,
+    help="Expose the smaller router-first tool set or the full specialist surface.",
+)
+def serve(transport: str, host: str, port: int, tool_profile: str):
+    """Start the MCP server over stdin/stdout or SSE."""
     from .mcp_server import start_server
-    start_server(port=port)
+    start_server(transport=transport, host=host, port=port, tool_profile=tool_profile)
 
 
 @main.command()
@@ -53,6 +76,254 @@ def ask(question: str, directory: str | None):
     from .rag import ask_question
     answer = ask_question(question, scope=directory)
     click.echo(answer)
+
+
+@main.command(name="lsp", hidden=True)
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.argument("line", type=int)
+@click.option("--column", type=int, help="1-based column. Inferred from the nearest identifier if omitted.")
+@click.option("--root", type=click.Path(exists=True, file_okay=False), help="Workspace root for LSP initialization")
+@click.option("--no-references", is_flag=True, help="Skip the references request")
+def lsp_inspect(path: str, line: int, column: int | None, root: str | None, no_references: bool):
+    """Query semantic info from the language server for a file position."""
+    from .lsp import semantic_inspect
+
+    result = semantic_inspect(
+        path,
+        line,
+        column,
+        root=root,
+        include_references=not no_references,
+    )
+    click.echo(json.dumps(result, indent=2, default=str))
+
+
+@main.command(name="lsp-symbols", hidden=True)
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.argument("query")
+@click.option("--root", type=click.Path(exists=True, file_okay=False), help="Workspace root for LSP initialization")
+@click.option("--limit", type=int, default=20, show_default=True, help="Max symbols to return")
+def lsp_symbols(path: str, query: str, root: str | None, limit: int):
+    """Query workspace symbols from the language server."""
+    from .lsp import workspace_symbols
+
+    result = workspace_symbols(path, query, root=root, limit=limit)
+    click.echo(json.dumps(result, indent=2, default=str))
+
+
+@main.command()
+@click.option("--fix", is_flag=True, help="Show install/start commands for non-OK checks.")
+@click.option("--diagnostics", "diagnostics_path", type=click.Path(exists=True, dir_okay=False), help="Also inspect LSP diagnostics for a source file.")
+@click.option("--line", type=int, help="1-based line for --diagnostics")
+@click.option("--column", type=int, help="1-based column for --diagnostics")
+def doctor(fix: bool, diagnostics_path: str | None, line: int | None, column: int | None):
+    """Check required runtime dependencies and optional local capabilities."""
+    from .runtime import runtime_report
+
+    report = runtime_report()
+    for check in report["checks"]:
+        label = {
+            "ok": "OK",
+            "error": "MISSING",
+            "warn": "WARN",
+            "skip": "SKIP",
+        }.get(check["status"], check["status"].upper())
+        click.echo(f"{label}: {check['name']} [{check['category']}] - {check['details']}")
+
+    fixable_checks = [check for check in report["checks"] if check["install_options"]]
+    if fix and fixable_checks:
+        _run_doctor_fix_flow(fixable_checks)
+    elif fixable_checks:
+        click.echo()
+        click.echo("Tip: run `tldr doctor --fix` to choose install/start commands for non-OK checks.")
+
+    if diagnostics_path:
+        from .coding_tools import diagnostics_here
+
+        click.echo()
+        click.echo("Diagnostics:")
+        _render_diagnostics_report(diagnostics_here(diagnostics_path, line=line, column=column))
+
+    if not report["ok"]:
+        raise click.ClickException("Runtime dependency check failed.")
+
+
+@main.command()
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--since", help="ISO timestamp override instead of the stored summary checkpoint.")
+@click.option("--no-mark-checked", is_flag=True, help="Do not advance the summary checkpoint after printing.")
+@click.option("--limit", type=int, default=10, show_default=True, help="Max items per section.")
+@click.option("--json-output", is_flag=True, help="Print the raw summary payload as JSON.")
+def summary(root: str, since: str | None, no_mark_checked: bool, limit: int, json_output: bool):
+    """Show what changed since the last summary checkpoint."""
+    from .summary import build_summary, render_summary
+
+    result = build_summary(root=root, since=since, mark_checked=not no_mark_checked, limit=limit)
+    click.echo(json.dumps(result, indent=2, default=str) if json_output else render_summary(result))
+
+
+@main.group()
+def children():
+    """List and acknowledge nested child projects under the current repository."""
+    pass
+
+
+@children.command(name="list")
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
+@click.option("--status", type=click.Choice(["unknown", "merged", "ignored"]), help="Optional status filter.")
+@click.option("--all", "include_ignored", is_flag=True, help="Include ignored children in the output.")
+@click.option("--json-output", is_flag=True, help="Print the raw child payload as JSON.")
+def children_list(root: str, status: str | None, include_ignored: bool, json_output: bool):
+    """List detected child subtrees and their acknowledgment status."""
+    from .children import list_children
+
+    result = list_children(root=root, status=status, include_ignored=include_ignored)
+    click.echo(json.dumps(result, indent=2, default=str) if json_output else _render_children_listing(result))
+
+
+@children.command("merge")
+@click.argument("path")
+@click.option("--root", type=click.Path(exists=True, file_okay=False), default=".", show_default=True, help="Repository root.")
+@click.option("--note", help="Optional note explaining why the child is merged.")
+def children_merge(path: str, root: str, note: str | None):
+    """Mark a child subtree as intentionally merged into this repository."""
+    from .children import describe_child, merge_child
+
+    result = merge_child(path, root=root, note=note)
+    click.echo(f"MERGED: {result['path']} - {describe_child(result)}")
+
+
+@children.command("ignore")
+@click.argument("path")
+@click.option("--root", type=click.Path(exists=True, file_okay=False), default=".", show_default=True, help="Repository root.")
+@click.option("--note", help="Optional note explaining why the child is ignored.")
+def children_ignore(path: str, root: str, note: str | None):
+    """Mark a child subtree as intentionally ignored."""
+    from .children import describe_child, ignore_child
+
+    result = ignore_child(path, root=root, note=note)
+    click.echo(f"IGNORED: {result['path']} - {describe_child(result)}")
+
+
+def _run_doctor_fix_flow(checks: list[dict[str, object]]):
+    """Render install/start guidance for non-OK checks."""
+
+    click.echo()
+    click.echo("Install / start options:")
+
+    for idx, check in enumerate(checks, start=1):
+        click.echo(f"[ ] {idx}. {check['name']} [{check['category']}]")
+        for option_idx, option in enumerate(check["install_options"]):
+            prefix = "Recommended" if option_idx == 0 else "Option"
+            click.echo(f"    {prefix}: {option['label']}")
+            click.echo(f"      {option['command']}")
+
+    if not sys.stdin.isatty():
+        click.echo()
+        click.echo("Printed all available options because this session is non-interactive.")
+        return
+
+    selected = _select_doctor_fix_items(checks)
+    if not selected:
+        return
+
+    click.echo()
+    click.echo("Selected:")
+    for check in selected:
+        click.echo(f"[x] {check['name']} [{check['category']}]")
+        if check["install_options"]:
+            click.echo(f"    {check['install_options'][0]['command']}")
+
+
+def _render_children_listing(result: dict) -> str:
+    """Render a concise human-facing child listing."""
+
+    from .children import describe_child
+
+    lines = [
+        "Children: "
+        f"{result.get('count', 0)} listed "
+        f"({result.get('unknown_count', 0)} unknown, "
+        f"{result.get('merged_count', 0)} merged, "
+        f"{result.get('ignored_count', 0)} ignored)"
+    ]
+
+    entries = result.get("children", [])
+    if not entries:
+        lines.append("No child projects detected.")
+        return "\n".join(lines)
+
+    for child in entries:
+        lines.append(f"{child['status'].upper()}: {child['path']} - {describe_child(child)}")
+
+    return "\n".join(lines)
+
+
+def _render_diagnostics_report(report: dict) -> None:
+    """Render diagnostics in a doctor-style human format."""
+
+    diagnostics = report.get("diagnostics", [])
+    if diagnostics:
+        for item in diagnostics:
+            label = str(item.get("severity", "info")).upper()
+            click.echo(f"{label}: {item.get('path')}:{item.get('line')} - {item.get('message')}")
+    else:
+        click.echo(f"OK: no diagnostics reported for {report.get('path')}")
+
+    likely_fix_area = report.get("likely_fix_area")
+    if likely_fix_area:
+        click.echo(
+            "Likely fix area: "
+            f"{likely_fix_area.get('path')}:{likely_fix_area.get('line')} "
+            f"({likely_fix_area.get('severity')})"
+        )
+
+    impacted_symbols = report.get("impacted_symbols") or []
+    if impacted_symbols:
+        click.echo(f"Impacted symbols: {', '.join(impacted_symbols)}")
+
+    verification_commands = report.get("verification_commands") or []
+    if verification_commands:
+        click.echo(f"Verification: {verification_commands[0]}")
+
+    fallback_used = report.get("fallback_used") or []
+    if fallback_used:
+        click.echo(f"Fallbacks: {', '.join(fallback_used)}")
+
+
+def _select_doctor_fix_items(checks: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Select fixable checks with a checkbox prompt."""
+
+    questionary = _load_questionary()
+    choices = []
+    for check in checks:
+        title = f"{check['name']} [{check['category']}]"
+        if check["install_options"]:
+            title += f" -> {check['install_options'][0]['command']}"
+        choices.append(questionary.Choice(title=title, value=check))
+
+    selected = questionary.checkbox(
+        "Select items to print again as a short checklist",
+        choices=choices,
+        qmark="",
+        instruction="Use arrows, space to toggle, enter to confirm",
+    ).ask()
+
+    return selected or []
+
+
+def _load_questionary():
+    """Import questionary lazily for the interactive doctor flow."""
+
+    try:
+        import questionary
+    except ImportError as exc:
+        raise click.ClickException(
+            "Interactive doctor fixes require `questionary`. Run `python3.12 -m pip install questionary` "
+            "or reinstall the project dependencies."
+        ) from exc
+
+    return questionary
 
 
 if __name__ == "__main__":
