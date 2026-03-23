@@ -11,7 +11,7 @@ In plain terms: it is trying to make repo context good enough that an LLM starts
 Trust order matters:
 
 - First: source code, tests, and manifests
-- Second: bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, and `TLDROADMAP.md`
+- Second: bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, and `TLDROADMAP.md`
 - Third: planning digest: `.tldr/roadmap/TLDRPLANS.md`
 - Fourth: tactical notes: `TLDRNOTES.md`
 - Fifth: raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`
@@ -22,7 +22,7 @@ The `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md` files are useful, but they a
 
 Context classification:
 
-- Bedrock context: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDROADMAP.md`
+- Bedrock context: `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md`
 - Planning digest: `.tldr/roadmap/TLDRPLANS.md`
 - Tactical notes: `TLDRNOTES.md`
 - Raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`

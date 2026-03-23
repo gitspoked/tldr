@@ -216,7 +216,7 @@ tldreadme/
 ├── parser.py       # compatibility facade for ASTs, deps, and docs
 ├── asts.py         # tree-sitter AST extraction
 ├── deps.py         # manifest dependency extraction
-├── context_docs.py # README/CLAUDE/AGENTS/GEMINI/roadmap/notes/plans scanner
+├── context_docs.py # README/CLAUDE/CODEX/GEMINI/AGENTS/roadmap/notes/plans scanner
 ├── embedder.py     # LiteLLM → Qdrant vectors
 ├── grapher.py      # FalkorDB call/import/dependency graph
 ├── lsp.py          # lightweight LSP client + semantic query helpers
@@ -265,7 +265,7 @@ New agent-facing behavior should extend one of those four tools or stay in the `
 
 Human trust hierarchy:
 
-- bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDROADMAP.md`
+- bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md`
 - planning digest: `.tldr/roadmap/TLDRPLANS.md`
 - tactical notes: `TLDRNOTES.md`
 - raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`

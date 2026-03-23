@@ -20,6 +20,8 @@ class ContextDoc:
 CONTEXT_DOC_NAMES = {
     "CLAUDE.md": "claude",
     "claude.md": "claude",
+    "CODEX.md": "codex",
+    "codex.md": "codex",
     "AGENTS.md": "agents",
     "agents.md": "agents",
     "GEMINI.md": "gemini",

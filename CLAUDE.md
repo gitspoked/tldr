@@ -60,7 +60,7 @@ Pipeline flow: **parse → embed → graph → generate**, orchestrated by `pipe
 Source files
   → asts.py (tree-sitter AST → Symbol, Import, CallSite dataclasses)
   → deps.py (manifest dependency extraction)
-  → context_docs.py (README/CLAUDE/AGENTS scanners)
+  → context_docs.py (README/CLAUDE/CODEX/GEMINI/AGENTS scanners)
   → embedder.py (LiteLLM embedding → Qdrant collection "tldreadme_code")
   → grapher.py (FalkorDB graph "tldreadme" with Symbol/File/Module/Import nodes)
   → hot_index.py (top 100 symbols cached → .tldr/hot_index.json)
@@ -72,7 +72,7 @@ Source files
 - **parser.py** — Compatibility facade. Re-exports AST parsing, dependency extraction, and context-doc scanning from the split modules. Do not bypass it; new parsing behavior goes into the split modules.
 - **asts.py** — Tree-sitter AST extraction. Produces `ParseResult`, `Symbol`, `Import`, and `CallSite` dataclasses.
 - **deps.py** — Manifest dependency extraction from Cargo.toml, package.json, go.mod, pyproject.toml, and requirements.txt.
-- **context_docs.py** — Scans CLAUDE.md, README.md, AGENTS.md, GEMINI.md, TLDROADMAP.md, TLDRNOTES.md, `.tldr/roadmap/TLDRPLANS.md`, and related project docs into structured sections.
+- **context_docs.py** — Scans CLAUDE.md, CODEX.md, README.md, AGENTS.md, GEMINI.md, TLDROADMAP.md, TLDRNOTES.md, `.tldr/roadmap/TLDRPLANS.md`, and related project docs into structured sections.
 - **embedder.py** — `CodeEmbedder` class wrapping Qdrant. `embed_batch()` for bulk, `embed_text()` for single queries. Collection auto-creates on first use with dimension auto-detection.
 - **grapher.py** — `CodeGrapher` class wrapping FalkorDB (Redis protocol). Query methods: `get_callers`, `get_callees`, `get_module_symbols`, `get_flow`, `get_dependents`.
 - **chains.py** — Composed tool sequences: `know` (80% use case: hot_index → rg → graph), `impact` (15%: rg counts → graph dependents → severity), `discover` (5%: rg + semantic merge), `explain` (all of the above → LLM synthesis).
@@ -119,7 +119,7 @@ Prompts: `impact-review`, `module-brief`, `semantic-investigation`, `resume-sess
 
 - Runtime state: `.tldr/` (gitignored except `.tldr/work/plans/` and `.tldr/work/children.yaml`)
 - Generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
-- Human trust hierarchy (highest first): `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDROADMAP.md` → `.tldr/roadmap/TLDRPLANS.md` → `TLDRNOTES.md` → raw drops → generated context → operational state
+- Human trust hierarchy (highest first): `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md` → `.tldr/roadmap/TLDRPLANS.md` → `TLDRNOTES.md` → raw drops → generated context → operational state
 - `TLDROADMAP.md` uses explicit trust markers: the top human-owned block is durable, and the lower auto-generated block is refreshable.
 - Source of truth is always the code, tests, and manifests
 

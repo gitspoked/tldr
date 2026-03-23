@@ -313,6 +313,7 @@ def test_scan_context_docs():
         root = Path(tmpdir)
         (root / "README.md").write_text("# My Project\n\nThis does stuff.\n")
         (root / "CLAUDE.md").write_text("# Instructions\n\n## Build\n\n`make build`\n")
+        (root / "CODEX.md").write_text("# Codex\n\nCodex-specific guidance.\n")
         (root / "GEMINI.md").write_text("# Gemini\n\nGemini-specific guidance.\n")
         (root / "TLDROADMAP.md").write_text("# TLDROADMAP\n\n## North Star\n\nRoadmap intent.\n")
         (root / "TLDRNOTES.md").write_text("# Notes\n\nTactical caveat.\n")
@@ -326,12 +327,13 @@ def test_scan_context_docs():
     kinds = [d.kind for d in docs]
     assert "readme" in kinds
     assert "claude" in kinds
+    assert "codex" in kinds
     assert "gemini" in kinds
     assert "roadmap" in kinds
     assert "notes" in kinds
     assert "plans" in kinds
     # random.md should NOT be included (not in CONTEXT_DOC_NAMES)
-    assert len(docs) == 6
+    assert len(docs) == 7
 
 
 def test_parse_markdown_sections():
