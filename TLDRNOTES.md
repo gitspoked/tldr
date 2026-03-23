@@ -11,19 +11,25 @@ In plain terms: it is trying to make repo context good enough that an LLM starts
 Trust order matters:
 
 - First: source code, tests, and manifests
-- Second: bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, and `TLDRNOTES.md`
-- Third: planning context: `TLDRPLANS.md`, `TLDRPLANS.*.md`, and `TLDROADMAP.md`
-- Fourth: local operational state under `.tldr/work/`
+- Second: bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, and `TLDROADMAP.md`
+- Third: planning digest: `TLDRPLANS.md`
+- Fourth: tactical notes: `TLDRNOTES.md`
+- Fifth: raw note drops: `TLDRPLANS.*.md`
+- Sixth: local operational state under `.tldr/work/`
 - Last: generated files under `.claude/`
 
 The `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md` files are useful, but they are generated summaries. They are not the source of truth over the code.
 
 Context classification:
 
-- Bedrock context: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDRNOTES.md`
-- Planning context: `TLDRPLANS.md`, `TLDRPLANS.*.md`, `TLDROADMAP.md`
+- Bedrock context: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDROADMAP.md`
+- Planning digest: `TLDRPLANS.md`
+- Tactical notes: `TLDRNOTES.md`
+- Raw note drops: `TLDRPLANS.*.md`
 - Generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
 - Scratch / non-bedrock notes: `TLDREADME.md`
+
+`TLDRNOTES.md` is not the project destination. It is the tactical continuity pad: interruptions, caveats, weird findings, and short-lived reminders that still help a future human or agent resume work.
 
 ## What Is Stable Now
 

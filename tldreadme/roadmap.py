@@ -144,6 +144,7 @@ def _intent_text(root: str | Path = ".") -> str:
     repo_root = _repo_root(root)
     candidates = [
         _read_text(repo_root / "README.md"),
+        _read_text(repo_root / ROADMAP_FILE),
         _read_text(repo_root / "TLDRNOTES.md"),
         _read_text(repo_root / "TLDREADME.md"),
     ]
