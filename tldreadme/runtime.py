@@ -31,6 +31,55 @@ OPTIONAL_LSPS = (
     ("Java LSP", ("jdtls",)),
 )
 
+AUDIT_TOOL_SPECS = (
+    {
+        "id": "osv-scanner",
+        "name": "OSV-Scanner",
+        "kind": "binary",
+        "binary": "osv-scanner",
+        "categories": ("deps",),
+    },
+    {
+        "id": "pip-audit",
+        "name": "pip-audit",
+        "kind": "python",
+        "module": "pip_audit",
+        "package": "pip-audit",
+        "categories": ("deps",),
+    },
+    {
+        "id": "semgrep",
+        "name": "Semgrep",
+        "kind": "python",
+        "module": "semgrep",
+        "package": "semgrep",
+        "categories": ("code",),
+    },
+    {
+        "id": "bandit",
+        "name": "Bandit",
+        "kind": "python",
+        "module": "bandit",
+        "package": "bandit",
+        "categories": ("code",),
+    },
+    {
+        "id": "gitleaks",
+        "name": "Gitleaks",
+        "kind": "binary",
+        "binary": "gitleaks",
+        "categories": ("secrets",),
+    },
+    {
+        "id": "garak",
+        "name": "Garak",
+        "kind": "python",
+        "module": "garak",
+        "package": "garak",
+        "categories": ("llm",),
+    },
+)
+
 
 def _check(name: str, status: str, details: str, *, category: str, required: bool = False) -> dict[str, object]:
     """Build a runtime check entry."""
@@ -76,6 +125,20 @@ def _dedupe_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
         seen.add(key)
         deduped.append(option)
     return deduped
+
+
+def _module_check_details(module: str, package: str) -> str | None:
+    """Return a versioned module detail string when import metadata is available."""
+
+    if find_spec(module) is None:
+        return None
+
+    try:
+        package_version = version(package)
+    except PackageNotFoundError:
+        package_version = "installed"
+
+    return f"{sys.executable} -m {module} ({package_version})"
 
 
 def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
@@ -185,6 +248,34 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
         if name == "Java LSP":
             if brew and is_macos:
                 options.append(_install_option("Install jdtls with Homebrew", "brew install jdtls"))
+            return _dedupe_options(options)
+
+    if category == "audit":
+        if name == "OSV-Scanner":
+            if brew and is_macos:
+                options.append(_install_option("Install OSV-Scanner with Homebrew", "brew install osv-scanner"))
+            return _dedupe_options(options)
+
+        if name == "pip-audit":
+            options.append(_install_option("Install pip-audit in the active environment", f"{_python_cmd()} -m pip install pip-audit"))
+            return _dedupe_options(options)
+
+        if name == "Semgrep":
+            options.append(_install_option("Install Semgrep in the active environment", f"{_python_cmd()} -m pip install semgrep"))
+            return _dedupe_options(options)
+
+        if name == "Bandit":
+            options.append(_install_option("Install Bandit in the active environment", f"{_python_cmd()} -m pip install bandit"))
+            return _dedupe_options(options)
+
+        if name == "Gitleaks":
+            if brew and is_macos:
+                options.append(_install_option("Install Gitleaks with Homebrew", "brew install gitleaks"))
+            return _dedupe_options(options)
+
+        if name == "Garak":
+            options.append(_install_option("Install Garak in the active environment", f"{_python_cmd()} -m pip install garak"))
+            options.append(_install_option("Create a local Garak config stub", "mkdir -p .tldr && printf '# add garak target config here\\n' > .tldr/garak.yml"))
             return _dedupe_options(options)
 
     return options
@@ -373,6 +464,48 @@ def optional_lsp_checks() -> list[dict[str, object]]:
                     category="lsp",
                 )
             )
+
+    return checks
+
+
+def audit_tool_checks(categories: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+    """Check whether supported local audit scanners are available."""
+
+    allowed = set(categories or ())
+    checks: list[dict[str, object]] = []
+
+    for spec in AUDIT_TOOL_SPECS:
+        spec_categories = tuple(spec["categories"])
+        if allowed and not allowed.intersection(spec_categories):
+            continue
+
+        if spec["kind"] == "binary":
+            path = which(spec["binary"])
+            if path:
+                check = _check(spec["name"], "ok", f"{spec['binary']} at {path}", category="audit")
+            else:
+                check = _check(
+                    spec["name"],
+                    "warn",
+                    f"not found on PATH; checked {spec['binary']}",
+                    category="audit",
+                )
+        else:
+            details = _module_check_details(spec["module"], spec["package"])
+            if details:
+                check = _check(spec["name"], "ok", details, category="audit")
+            else:
+                check = _check(
+                    spec["name"],
+                    "warn",
+                    f"{spec['module']} is not importable from {sys.executable}",
+                    category="audit",
+                )
+
+        check["tool_id"] = spec["id"]
+        check["audit_categories"] = list(spec_categories)
+        check["install_options"] = install_options_for_check(check)
+        checks.append(check)
 
     return checks
 

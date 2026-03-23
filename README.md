@@ -14,6 +14,7 @@ tldr serve --transport sse -p 8900  # network-accessible SSE transport
 tldr watch /path/to/your/code   # stay current on file saves
 tldr ask "how does X work?"     # RAG-powered answer from CLI
 tldr doctor --diagnostics path/to/file.py --line 42  # human-facing diagnostics report
+tldr audit all --dry-run        # preview the local security scanner selection
 tldr summary                    # what changed since the last summary checkpoint
 tldr plans-capture .            # paste notes until Ctrl-D, save a .tldr/roadmap/TLDRPLANS.<timestamp>.md drop
 tldr whats-next .               # show the next strategic question and grounded options
@@ -121,6 +122,16 @@ For human-facing code health, add `--diagnostics path/to/file.py` to `tldr docto
 `tldr summary` prints commits, working tree changes, workboard updates, and session notes since the last local summary checkpoint, then advances that checkpoint unless you pass `--no-mark-checked`.
 
 `tldr plans-capture` reads freeform notes, links, example repos, and pasted context from stdin until Ctrl-D, stores the raw drop under `.tldr/roadmap/TLDRPLANS.<timestamp>.md`, and refreshes the consolidated `.tldr/roadmap/TLDRPLANS.md` digest. Then `tldr whats-next` turns README intent, captured notes, workboard state, and grounded planning signals into the next strategic question to ask. `tldr current-roadmap` writes `TLDROADMAP.md` as the durable roadmap draft for the project, preserving the human-owned top section and refreshing only the lower generated section.
+
+Those planning commands are already the human-executable flow. You do not need wrapper scripts like `run-whats-next.sh` unless you want repo-local shortcuts.
+
+`tldr audit` is the local security pass. Use `tldr audit deps`, `code`, `secrets`, `llm`, or `all`. Add `--dry-run` to preview the selected scanner without executing it, and `--json-output` for automation-friendly output. The first pass prefers:
+- deps: `osv-scanner`, then `pip-audit`
+- code: `semgrep`, then `bandit`
+- secrets: `gitleaks`
+- llm: `garak` with an explicit `--garak-config PATH`
+
+Missing scanners degrade to doctor-style guidance instead of crashing. Start with `tldr audit all --dry-run`, then install the missing tools you actually want locally.
 
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 

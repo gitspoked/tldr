@@ -47,6 +47,11 @@
 # - Caveat:
 #    - `suggest_goals` and `auto_iterate` are now grounded in active plans, repo state, and visible feature gaps.
 #    - Still validate the chosen path with `repo_lookup` and `change_plan` before coding.
+# - Human execution path:
+#    - `tldr whats-next .`
+#    - `tldr current-roadmap .`
+#    - `tldr audit all --dry-run`
+#    - wrapper scripts are optional convenience only; the CLI is the intended human surface.
 #
 __BOF__
 # ⏺ Ha — context is contagious. You're right. Feed a well-structured TLDR.md with the right symbols, relationships, and patterns, and the quality of everything it produces goes up.
@@ -74,7 +79,6 @@ __EOF__ # MIT, enjoy  # # youtu.be/q0hyYWKXF0Q #~#
 # (c) 2026 Matt Klein last # # # # # # # # # # # #~#    
 # nm at ntele net might not # # # # # # # # # # # #~#
 # miss ur mail prolly tldr?# # # # # # # # # # # # #~#
-
 
 
 
