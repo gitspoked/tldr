@@ -291,8 +291,11 @@ def _tooling_payload(tool_profile: str = DEFAULT_TOOL_PROFILE, capabilities: dic
     exposed_names = _ordered_tool_names_for_profile(tool_profile, capabilities=capabilities, routing_signals=routing_signals)
     suppressed_names = [name for name in TOOL_METADATA if _missing_backends_for_tool(name, capabilities)]
     deferred_names = [name for name in TOOL_METADATA if name not in exposed_names and name not in suppressed_names]
+    coding_tools_module = _coding_tools()
     return {
         "active_profile": tool_profile,
+        "router_contract_version": coding_tools_module.ROUTER_CONTRACT_VERSION,
+        "router_contract_tools": list(coding_tools_module.ROUTER_TOP_LEVEL_SEQUENCE),
         "capabilities": capabilities,
         "routing_signals": routing_signals,
         "recommended_sequence": _recommended_sequence(tool_profile, capabilities=capabilities, routing_signals=routing_signals),

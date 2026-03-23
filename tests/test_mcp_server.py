@@ -21,6 +21,8 @@ def test_read_tooling_resource_uses_router_profile(monkeypatch):
     payload = json.loads(mcp_server._read_resource_text("repo://tooling", capabilities=capabilities))
 
     assert payload["active_profile"] == "router"
+    assert payload["router_contract_version"] == 1
+    assert payload["router_contract_tools"] == ["repo_next_action", "repo_lookup", "change_plan", "verify_change"]
     assert [tool["name"] for tool in payload["exposed_tools"]] == [
         "repo_lookup",
         "repo_next_action",

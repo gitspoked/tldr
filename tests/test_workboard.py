@@ -1,6 +1,7 @@
 """Tests for the file-backed workboard."""
 
 from pathlib import Path
+import yaml
 
 from tldreadme import workboard
 
@@ -18,6 +19,9 @@ def test_create_plan_persists_yaml(tmp_path):
 
     plan_file = root / "plans" / f"{plan['id']}.yaml"
     assert plan_file.exists()
+    payload = yaml.safe_load(plan_file.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == workboard.SCHEMA_VERSION
+    assert payload["document_type"] == workboard.PLAN_DOCUMENT_TYPE
     assert plan["phases"][0]["name"] == "Plan"
 
 
@@ -68,11 +72,14 @@ def test_current_plan_uses_session_pointer(tmp_path):
 
     current = workboard.current_plan(root=root)
     session_path = root / "sessions" / f"current.{current['session']['session_id']}.yaml"
+    session_payload = yaml.safe_load(session_path.read_text(encoding="utf-8"))
 
     assert current["session"]["current_plan_id"] == first["id"]
     assert current["plan"]["id"] == first["id"]
     assert current["session"]["notes"][0]["note"] == "Continue from the schema review"
     assert session_path.exists()
+    assert session_payload["schema_version"] == workboard.SCHEMA_VERSION
+    assert session_payload["document_type"] == workboard.SESSION_DOCUMENT_TYPE
     assert second["id"] != current["plan"]["id"]
 
 
@@ -152,3 +159,59 @@ def test_get_task_includes_plan_context(tmp_path):
     assert payload["plan_id"] == plan["id"]
     assert payload["plan_title"] == "Context"
     assert payload["title"] == "Inspect nested task payload"
+
+
+def test_get_plan_upgrades_legacy_plan_metadata(tmp_path):
+    root = tmp_path / "work"
+    plans_dir = root / "plans"
+    plans_dir.mkdir(parents=True)
+    plan_path = plans_dir / "legacy-plan.yaml"
+    plan_path.write_text(
+        yaml.safe_dump(
+            {
+                "id": "legacy-plan",
+                "title": "Legacy plan",
+                "status": "pending",
+                "goal": "Preserve backward compatibility",
+                "scope": [],
+                "owner": None,
+                "success_criteria": [],
+                "risks": [],
+                "notes": [],
+                "phases": [],
+                "created_at": "2026-03-23T00:00:00+00:00",
+                "updated_at": "2026-03-23T00:00:00+00:00",
+                "archived_at": None,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = workboard.get_plan("legacy-plan", root=root)
+    rewritten = yaml.safe_load(plan_path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == workboard.SCHEMA_VERSION
+    assert payload["document_type"] == workboard.PLAN_DOCUMENT_TYPE
+    assert rewritten["schema_version"] == workboard.SCHEMA_VERSION
+    assert rewritten["document_type"] == workboard.PLAN_DOCUMENT_TYPE
+
+
+def test_current_plan_upgrades_legacy_session_metadata(tmp_path):
+    root = tmp_path / "work"
+    plan = workboard.create_plan("Legacy session", "Upgrade a canonical session file", root=root)
+    current = workboard.current_plan(root=root)
+    session_path = root / "sessions" / f"current.{current['session']['session_id']}.yaml"
+    payload = yaml.safe_load(session_path.read_text(encoding="utf-8"))
+    payload.pop("schema_version", None)
+    payload.pop("document_type", None)
+    session_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    refreshed = workboard.current_plan(root=root)
+    rewritten = yaml.safe_load(session_path.read_text(encoding="utf-8"))
+
+    assert refreshed["session"]["schema_version"] == workboard.SCHEMA_VERSION
+    assert refreshed["session"]["document_type"] == workboard.SESSION_DOCUMENT_TYPE
+    assert rewritten["schema_version"] == workboard.SCHEMA_VERSION
+    assert rewritten["document_type"] == workboard.SESSION_DOCUMENT_TYPE
+    assert refreshed["plan"]["id"] == plan["id"]

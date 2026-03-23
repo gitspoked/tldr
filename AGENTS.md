@@ -16,6 +16,8 @@ Create an environment with `python3.12 -m venv .venv` and install locally with `
 ## Coding Style & Naming Conventions
 Follow existing Python style: 4-space indentation, snake_case for modules/functions/tests, PascalCase for dataclasses, and short, direct docstrings. Prefer type hints on public functions and keep modules single-purpose. When adding behavior, extend the existing module instead of creating parallel abstractions.
 
+Agent-facing bedrock: keep the router-default MCP surface limited to `repo_next_action`, `repo_lookup`, `change_plan`, and `verify_change`. Add new read/planning/verification behavior behind one of those tools or keep it in the `full` specialist profile. Preserve the normalized router payload keys (`summary`, `confidence`, `evidence`, `recommended_next_action`, `verification_commands`, `fallback_used`) and keep `parser.py` as the compatibility facade over `asts.py`, `deps.py`, and `context_docs.py`.
+
 ## Testing Guidelines
 Use `pytest` and keep test names in the `test_<behavior>` form. Mirror current patterns: `CliRunner` for CLI coverage and `tempfile`/`Path` helpers for parser and filesystem cases. Add or update tests with any change to parsing, search, indexing, CLI behavior, or generated context output.
 

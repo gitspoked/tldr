@@ -242,6 +242,17 @@ Beyond tools, TLDREADME now exposes MCP resources and prompts for stable context
 
 `tldr serve` now defaults to `--tool-profile router`, which exposes a four-intent MCP surface for agent routers: resume, lookup, plan, and verify. Tool exposure is also capability-enforced: tools that require missing backends such as LSP, Qdrant, or FalkorDB are suppressed until those capabilities are available. Use `tldr serve --tool-profile full` when you want the complete debugging and specialist surface.
 
+## Foundation Contract
+
+Treat the router-default surface as bedrock:
+
+- `repo_next_action` resumes or coordinates work
+- `repo_lookup` handles repo orientation, symbol lookup, impact lookup, and edit-time context
+- `change_plan` turns goals into executable edits
+- `verify_change` closes work with evidence and verification
+
+New agent-facing behavior should extend one of those four tools or stay in the `full` specialist profile. Workboard plans, sessions, and child-project registries are versioned file-backed documents under `.tldr/work/`, and `parser.py` remains the compatibility facade over the split parser modules.
+
 ## Workboard
 
 TLDREADME now includes a file-backed workboard for phased execution planning:

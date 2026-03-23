@@ -11,6 +11,7 @@ import yaml
 WORK_ROOT = Path(".tldr/work")
 CHILDREN_FILE = Path(".tldr/work/children.yaml")
 SCHEMA_VERSION = 1
+CHILDREN_DOCUMENT_TYPE = "tldreadme/children_registry"
 
 ChildStatus = Literal["unknown", "merged", "ignored"]
 
@@ -79,6 +80,7 @@ class ChildRegistry(BaseModel):
     """Canonical child acknowledgment document."""
 
     schema_version: int = SCHEMA_VERSION
+    document_type: str = CHILDREN_DOCUMENT_TYPE
     children: list[ChildRecord] = Field(default_factory=list)
 
 
@@ -129,7 +131,17 @@ def _load_registry(root: str | Path | None = None) -> ChildRegistry:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict):
         return ChildRegistry()
-    return ChildRegistry.model_validate(data)
+    changed = False
+    if data.get("schema_version") is None:
+        data["schema_version"] = SCHEMA_VERSION
+        changed = True
+    if not data.get("document_type"):
+        data["document_type"] = CHILDREN_DOCUMENT_TYPE
+        changed = True
+    registry = ChildRegistry.model_validate(data)
+    if changed:
+        _save_registry(registry, root)
+    return registry
 
 
 def _save_registry(registry: ChildRegistry, root: str | Path | None = None) -> None:
