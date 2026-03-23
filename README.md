@@ -120,7 +120,7 @@ For human-facing code health, add `--diagnostics path/to/file.py` to `tldr docto
 
 `tldr summary` prints commits, working tree changes, workboard updates, and session notes since the last local summary checkpoint, then advances that checkpoint unless you pass `--no-mark-checked`.
 
-`tldr plans-capture` reads freeform notes, links, example repos, and pasted context from stdin until Ctrl-D, stores the raw drop as `TLDRPLANS.<timestamp>.md`, and refreshes the consolidated `TLDRPLANS.md` digest. Then `tldr whats-next-vibe` turns README intent, captured notes, workboard state, and grounded planning signals into the next strategic question to ask. `tldr current-vibe-roadmap` writes `TLDROADMAP.md` as the current human-facing roadmap snapshot.
+`tldr plans-capture` reads freeform notes, links, example repos, and pasted context from stdin until Ctrl-D, stores the raw drop as `TLDRPLANS.<timestamp>.md`, and refreshes the consolidated `TLDRPLANS.md` digest. Then `tldr whats-next-vibe` turns README intent, captured notes, workboard state, and grounded planning signals into the next strategic question to ask. `tldr current-vibe-roadmap` writes `TLDROADMAP.md` as the current durable roadmap draft for the project.
 
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 
@@ -264,8 +264,10 @@ New agent-facing behavior should extend one of those four tools or stay in the `
 
 Human trust hierarchy:
 
-- bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDRNOTES.md`
-- planning context: `TLDRPLANS.md`, `TLDRPLANS.*.md`, `TLDROADMAP.md`
+- bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDROADMAP.md`
+- planning digest: `TLDRPLANS.md`
+- tactical notes: `TLDRNOTES.md`
+- raw note drops: `TLDRPLANS.*.md`
 - generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
 - operational state: `.tldr/work/*`
 - source of truth remains the code, tests, and manifests
