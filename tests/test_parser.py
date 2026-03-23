@@ -54,6 +54,22 @@ def test_parse_python_function():
     assert "def hello" in func.signature
 
 
+def test_parse_python_signature_survives_unicode_prefix():
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
+        f.write(
+            '"""Shared singleton instances — one connection per process."""\n\n'
+            "def get_embedder():\n"
+            "    return None\n"
+        )
+        f.flush()
+        result = parse_file(Path(f.name))
+
+    assert result is not None
+    func = next(s for s in result.symbols if s.name == "get_embedder")
+    assert func.signature == "def get_embedder():"
+    assert func.body.startswith("def get_embedder():")
+
+
 def test_parse_python_class():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
         f.write(
