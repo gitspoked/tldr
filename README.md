@@ -1,15 +1,20 @@
 # 
 # TLDREADME.md
 #
-**TL;DR for any codebase. Makes LLMs KNOW your code.**
+**TL;DR for any codebase. Privacy-first, local-first.**
 
-Point it at a directory. It parses every function, embeds it, graphs the relationships, and serves it all via MCP. Claude Code (or any LLM) stops searching and starts *knowing*.
+Point it at a directory. It parses every function, embeds it, graphs the relationships, and serves it all via MCP. Your LLM gets full codebase context before you ask your first question.
+
+**Your code never leaves your machine.** Ollama for inference, Qdrant and FalkorDB in local Docker containers. No API keys required. No code uploaded anywhere. Cloud providers are opt-in via LiteLLM when you want them.
 
 ```
 tldr init /path/to/your/code    # parse, embed, graph, generate TLDR.md
-tldr serve                       # MCP server — So your coder just KNOWs
+tldr serve                       # MCP server over stdio for Claude Code
+tldr serve --transport sse -p 8900  # network-accessible SSE transport
 tldr watch /path/to/your/code   # stay current on file saves
 tldr ask "how does X work?"     # RAG-powered answer from CLI
+tldr doctor --diagnostics path/to/file.py --line 42  # human-facing diagnostics report
+tldr summary                    # what changed since the last summary checkpoint
 ```
 
 ## What It Does
@@ -22,7 +27,7 @@ Your Code
   ├── FalkorDB ────── call graph, import graph, dependency graph
   ├── LiteLLM ─────── RAG synthesis (default Ollama local, or OpenAI/Anthropic/OpenRouter)
   ├── ripgrep ─────── fast text search with context
-  └── MCP Server ──── 16 tools that make LLMs understand your code
+  └── MCP Server ──── tools, resources, and prompts that make LLMs understand your code
 ```
 
 ## The Tools
@@ -34,12 +39,38 @@ Your Code
 | `know` | Everything about a symbol: definition, usages, callers, callees. One call. Start here. |
 | `read_grep` | Fast text search via rg. Exact strings, regex, error messages. |
 | `read_grep_files` | Which files contain this pattern? |
+| `read_semantic` | Hover, definition, references, and document symbols from the installed language server. |
+| `read_workspace_symbols` | Semantic symbol search through the installed language server. |
 
-### The 15% — What Breaks If I Touch This
+### Router-Preferred Default Surface
 
 | Tool | What |
 |------|------|
+| `repo_next_action` | Resume work safely. Looks at sessions, overlaps, workboard state, and imported child trees, then recommends the next top-level tool. |
+| `repo_lookup` | Single read entry point. Internally chooses broad scan, federated search, symbol knowledge, impact lookup, or exact edit context. |
+| `change_plan` | Turns a coding goal into candidate files, risks, acceptance criteria, and ordered verification steps. |
+| `verify_change` | Checks workboard evidence and inferred verification commands, then reports pass/fail status and missing proof. |
+
+Every router-preferred tool returns the same high-signal fields: `summary`, `confidence`, `evidence`, `recommended_next_action`, `verification_commands`, and `fallback_used`.
+Use `repo_next_action` when resuming interrupted work, `repo_lookup` to understand the repo or a symbol, `change_plan` before editing, and `verify_change` before calling a task done.
+
+### Specialist Lookup Tools (`--tool-profile full`)
+
+| Tool | What |
+|------|------|
+| `scan_context` | Snapshot the repo surfaces available right now: code, tests, docs, generated TLDR files, workboard state, and recent changes. |
+| `search_context` | Search across those surfaces in one call and return ranked context hits with the next best follow-up tool. |
+| `edit_context` | Best first call before an edit. Returns the local snippet, enclosing symbol, semantic info, similar code, matching tasks, and tests. |
+| `test_map` | Finds the nearest likely tests and exact verification commands for a file or symbol. |
+| `pattern_search` | Finds reusable implementations so you can copy the local pattern instead of inventing a new one. |
+| `diagnostics_here` | Pulls LSP diagnostics for a file or exact position, including likely fix area and impacted symbols. |
+| `know` | Fast symbol knowledge: definition, usages, callers, and callees. |
 | `impact` | Severity rating + affected files + transitive dependents. Run before modifying. |
+
+### Deeper Graph Reads
+
+| Tool | What |
+|------|------|
 | `read_depends` | Full dependency chain from the graph. |
 | `read_flow` | Trace execution from entry point through call chain. |
 
@@ -64,7 +95,7 @@ Your Code
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.11+ (3.12 recommended)
 - Docker (for Qdrant, FalkorDB, Ollama, LiteLLM)
 - ripgrep (`brew install ripgrep`)
 
@@ -74,8 +105,18 @@ Your Code
 git clone https://github.com/ntele-dev/tldreadme.git
 cd tldreadme
 python3.12 -m venv .venv
-.venv/bin/pip install -e .
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/tldr doctor
+.venv/bin/tldr doctor --fix
 ```
+
+`tldr doctor` checks the pinned Python/tree-sitter/ripgrep runtime, reports local service reachability, and shows which common LSP servers are available on `PATH`. Add `--fix` for an interactive checkbox prompt with install/start commands for anything missing.
+
+For human-facing code health, add `--diagnostics path/to/file.py` to `tldr doctor` to print LSP diagnostics, likely fix area, impacted symbols, and the first verification command worth running.
+
+`tldr summary` prints commits, working tree changes, workboard updates, and session notes since the last local summary checkpoint, then advances that checkpoint unless you pass `--no-mark-checked`.
+
+Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 
 ### Start Infrastructure
 
@@ -134,15 +175,20 @@ Qwen Examples:
 32B if you can, 7b works fine for code intel. 
 
 
-To use cloud providers, set env vars and uncomment in `litellm-config.yaml`:
+To use cloud providers, copy `.env.example` to `.env`, set `LITELLM_URL`, switch `QDRANT_URL` / `FALKORDB_URL` to the standard ports used by `docker-compose.llm.yml`, and uncomment your provider in `litellm-config.yaml`:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...
-export OPENROUTER_API_KEY=sk-or-...
+cp .env.example .env
+
+# in .env
+LITELLM_URL=http://localhost:4000
+QDRANT_URL=http://localhost:6333
+FALKORDB_URL=redis://localhost:6379
+ANTHROPIC_API_KEY=sk-ant-...
+# or OPENAI_API_KEY / OPENROUTER_API_KEY
 ```
 
-One env var change. No code change.
+Config only. No code change.
 
 ## Languages
 
@@ -158,10 +204,14 @@ One env var change. No code change.
 
 ```
 tldreadme/
-├── cli.py          # init | watch | serve | ask
-├── parser.py       # tree-sitter AST extraction (12 languages)
+├── cli.py          # init | watch | serve | ask | summary | children
+├── parser.py       # compatibility facade for ASTs, deps, and docs
+├── asts.py         # tree-sitter AST extraction
+├── deps.py         # manifest dependency extraction
+├── context_docs.py # README/CLAUDE/AGENTS scanner
 ├── embedder.py     # LiteLLM → Qdrant vectors
 ├── grapher.py      # FalkorDB call/import/dependency graph
+├── lsp.py          # lightweight LSP client + semantic query helpers
 ├── search.py       # ripgrep wrapper (rg_search, rg_files, rg_count)
 ├── hot_index.py    # pre-cached top 100 symbols for instant lookup
 ├── rag.py          # RAG engine + backwards flow (suggest_goals, best_question)
@@ -169,7 +219,7 @@ tldreadme/
 ├── generator.py    # TLDR.md generator from indexed knowledge
 ├── watcher.py      # fswatch incremental re-indexing
 ├── pipeline.py     # orchestrates: parse → embed → graph → ge
-└── mcp_server.py   # 16 MCP tools
+└── mcp_server.py   # MCP tools, resources, and prompts
 ```
 
 ## Philosophy
@@ -179,5 +229,37 @@ tldreadme/
 - **Backwards-first.** The code knows what it needs. `suggest_goals` and `best_question` extract that knowledge; steer end results.
 - **Start fast, go deeper only when needed.** `know` (instant) before `explain` (LLM). `impact` (fast) before refactoring.
 - **Scan your code, catalog your deps, fetch docs on demand.** Never parse node_modules or libraries when scanning.
+
+## MCP Context
+
+Beyond tools, TLDREADME now exposes MCP resources and prompts for stable context reads:
+
+- Static resources: `repo://overview`, `repo://health`, `repo://tooling`, `repo://children`
+- Dynamic resources: `repo://module/{path}`, `repo://symbol/{name}`, `repo://semantic/{path}?line=...`, `repo://workspace-symbols/{query}?path=...`
+- Prompts: `impact-review`, `module-brief`, `semantic-investigation`
+- Router-preferred tools: `repo_next_action`, `repo_lookup`, `change_plan`, `verify_change`
+- Specialist lookup tools in `full`: `scan_context`, `search_context`, `edit_context`, `test_map`, `pattern_search`, `diagnostics_here`, `know`, `impact`
+
+`tldr serve` now defaults to `--tool-profile router`, which exposes a four-intent MCP surface for agent routers: resume, lookup, plan, and verify. Tool exposure is also capability-enforced: tools that require missing backends such as LSP, Qdrant, or FalkorDB are suppressed until those capabilities are available. Use `tldr serve --tool-profile full` when you want the complete debugging and specialist surface.
+
+## Workboard
+
+TLDREADME now includes a file-backed workboard for phased execution planning:
+
+- Canonical plan files: `.tldr/work/plans/*.yaml`
+- Canonical live sessions: `.tldr/work/sessions/current.<session_id>.yaml`
+- MCP tools: `plan_create`, `plan_update`, `plan_list`, `plan_current`, `plan_archive`, `task_add`, `task_update`, `task_complete`, `session_note`, `session_update`
+- MCP resources: `repo://plans`, `repo://session/current`, `repo://plan/{id}`, `repo://task/{plan_id}/{task_id}`
+- MCP prompts: `resume-session`, `phase-review`, `done-check`
+
+Each task supports acceptance criteria, verification commands, blockers, evidence, and next-step notes. Sessions keep only the low-noise state needed to resume and avoid overlap: current focus, next action, claimed files/symbols, blockers, and recent steps.
+
+## Child Projects
+
+Imported nested subprojects are treated as part of the repo by default. TLDREADME can still surface them so humans can acknowledge intent instead of silently blending them in:
+
+- Detection file: `.tldr/work/children.yaml`
+- Human CLI: `tldr children list`, `tldr children merge path/to/child`, `tldr children ignore path/to/child`
+- `tldr summary` highlights newly detected `unknown` children such as imported repos or copied-in modules
 
 ## License: MIT
