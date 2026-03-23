@@ -9,7 +9,7 @@ PLANS_FILE = "TLDRPLANS.md"
 PLANS_CAPTURE_PREFIX = "TLDRPLANS."
 PLANS_CAPTURE_SUFFIX = ".md"
 ROADMAP_FILE = "TLDROADMAP.md"
-ROADMAP_STATE_DIR = Path(".tldr/work/roadmap")
+ROADMAP_DIR = Path(".tldr/roadmap")
 BASELINE_PLANS_FILE = "baseline-tldrplans.md"
 
 
@@ -25,16 +25,28 @@ def _work_root(root: str | Path = ".") -> Path:
     return _repo_root(root) / ".tldr" / "work"
 
 
-def _roadmap_state_dir(root: str | Path = ".") -> Path:
-    """Return the roadmap state directory."""
+def _roadmap_dir(root: str | Path = ".") -> Path:
+    """Return the roadmap planning directory."""
 
-    return _repo_root(root) / ROADMAP_STATE_DIR
+    return _repo_root(root) / ROADMAP_DIR
 
 
 def _baseline_plans_path(root: str | Path = ".") -> Path:
     """Return the stored baseline plans path."""
 
-    return _roadmap_state_dir(root) / BASELINE_PLANS_FILE
+    return _roadmap_dir(root) / BASELINE_PLANS_FILE
+
+
+def _plans_path(root: str | Path = ".") -> Path:
+    """Return the consolidated plans digest path."""
+
+    return _roadmap_dir(root) / PLANS_FILE
+
+
+def _legacy_root_plans_path(root: str | Path = ".") -> Path:
+    """Return the legacy root-level TLDRPLANS path."""
+
+    return _repo_root(root) / PLANS_FILE
 
 
 def _read_text(path: Path) -> str:
@@ -119,8 +131,8 @@ def _relative(path: Path, root: Path) -> str:
 def _capture_files(root: str | Path = ".") -> list[Path]:
     """Return timestamped plan-capture files, newest first."""
 
-    repo_root = _repo_root(root)
-    return sorted(repo_root.glob(f"{PLANS_CAPTURE_PREFIX}*{PLANS_CAPTURE_SUFFIX}"), reverse=True)
+    plans_dir = _roadmap_dir(root)
+    return sorted(plans_dir.glob(f"{PLANS_CAPTURE_PREFIX}*{PLANS_CAPTURE_SUFFIX}"), reverse=True)
 
 
 def _baseline_plans_text(root: str | Path = ".") -> str:
@@ -131,8 +143,17 @@ def _baseline_plans_text(root: str | Path = ".") -> str:
     if existing:
         return existing
 
-    current = _read_text(_repo_root(root) / PLANS_FILE)
+    current = _read_text(_plans_path(root))
     if current and AUTO_MARKER not in current:
+        _write_text(baseline_path, current)
+        return current
+
+    legacy = _read_text(_legacy_root_plans_path(root))
+    if legacy and AUTO_MARKER not in legacy:
+        _write_text(baseline_path, legacy)
+        return legacy
+
+    if current and AUTO_MARKER in current:
         _write_text(baseline_path, current)
         return current
     return ""
@@ -293,7 +314,7 @@ def build_tldrplans(root: str | Path = ".", *, write: bool = False) -> dict:
                 lines.append("")
 
     markdown = "\n".join(lines).strip() + "\n"
-    path = repo_root / PLANS_FILE
+    path = _plans_path(repo_root)
     if write:
         _write_text(path, markdown)
 
@@ -316,7 +337,7 @@ def capture_plan_input(text: str, *, root: str | Path = ".") -> dict:
     if not clean_text:
         raise ValueError("No planning input was provided.")
 
-    capture_path = repo_root / _capture_filename()
+    capture_path = _roadmap_dir(repo_root) / _capture_filename()
     _write_text(capture_path, clean_text + "\n")
     consolidated = build_tldrplans(repo_root, write=True)
     return {
@@ -391,7 +412,7 @@ def whats_next_vibe(root: str | Path = ".") -> dict:
 def render_whats_next_vibe(payload: dict) -> str:
     """Render a concise human-facing whats-next report."""
 
-    lines = [f"What's next vibe for {payload['project']}", ""]
+    lines = [f"What's next for {payload['project']}", ""]
     lines.append(f"Intent: {payload.get('project_intent')}")
     lines.append("")
 
@@ -539,7 +560,7 @@ def render_current_vibe_roadmap(payload: dict) -> str:
         [
             "## Planning Inputs",
             "",
-            f"- Plans digest: `{Path(inputs.get('plans_path', PLANS_FILE)).name}`",
+            f"- Plans digest: `{inputs.get('plans_path', str(_plans_path('.')))}`",
             f"- Captured note drops: {inputs.get('captures_count', 0)}",
             f"- Unknown child trees: {inputs.get('children_unknown', 0)}",
             f"- Recommended next action: {payload.get('recommended_next_action')}",
@@ -547,8 +568,8 @@ def render_current_vibe_roadmap(payload: dict) -> str:
             "## Refresh Loop",
             "",
             "1. Use `tldr plans-capture` to drop fresh notes, links, and example-repo references.",
-            "2. Run `tldr whats-next-vibe` to inspect the next strategic question and options.",
-            "3. Run `tldr current-vibe-roadmap` to refresh this roadmap before or after each phase.",
+            "2. Run `tldr whats-next` to inspect the next strategic question and options.",
+            "3. Run `tldr current-roadmap` to refresh this roadmap before or after each phase.",
             "",
         ]
     )

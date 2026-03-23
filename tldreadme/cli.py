@@ -166,10 +166,13 @@ def summary(root: str, since: str | None, no_mark_checked: bool, limit: int, jso
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
 @click.option("--json-output", is_flag=True, help="Print the raw capture payload as JSON.")
 def plans_capture(root: str, json_output: bool):
-    """Capture pasted planning notes into TLDRPLANS.<timestamp>.md and refresh TLDRPLANS.md."""
+    """Capture pasted planning notes into .tldr/roadmap/TLDRPLANS.<timestamp>.md and refresh the digest."""
     from .roadmap import capture_plan_input
 
-    click.echo(f"Paste planning notes, links, and examples. Ctrl-D saves to {Path(root) / 'TLDRPLANS.<timestamp>.md'}")
+    click.echo(
+        "Paste planning notes, links, and examples. Ctrl-D saves to "
+        f"{Path(root) / '.tldr/roadmap/TLDRPLANS.<timestamp>.md'}"
+    )
     text = sys.stdin.read()
     if not text.strip():
         raise click.ClickException("No planning input received on stdin.")
@@ -184,23 +187,34 @@ def plans_capture(root: str, json_output: bool):
     click.echo(f"Captured notes tracked: {result['captures_count']}")
 
 
-@main.command(name="whats-next-vibe")
-@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
-@click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
-def whats_next_vibe(root: str, json_output: bool):
-    """Show the next strategic question and grounded options for the repository."""
+def _run_whats_next(root: str, json_output: bool):
+    """Shared handler for the human-facing whats-next report."""
+
     from .roadmap import render_whats_next_vibe, whats_next_vibe as build_whats_next_vibe
 
     result = build_whats_next_vibe(root=root)
     click.echo(json.dumps(result, indent=2, default=str) if json_output else render_whats_next_vibe(result))
 
 
-@main.command(name="current-vibe-roadmap")
+@main.command(name="whats-next")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
-@click.option("--no-write", is_flag=True, help="Do not write TLDROADMAP.md or refresh TLDRPLANS.md.")
 @click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
-def current_vibe_roadmap(root: str, no_write: bool, json_output: bool):
-    """Build the current roadmap snapshot and optionally write TLDROADMAP.md."""
+def whats_next(root: str, json_output: bool):
+    """Show the next strategic question and grounded options for the repository."""
+    _run_whats_next(root, json_output)
+
+
+@main.command(name="whats-next-vibe", hidden=True)
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
+def whats_next_vibe_legacy(root: str, json_output: bool):
+    """Compatibility alias for the previous whats-next command name."""
+    _run_whats_next(root, json_output)
+
+
+def _run_current_roadmap(root: str, no_write: bool, json_output: bool):
+    """Shared handler for the human-facing roadmap writer."""
+
     from .roadmap import build_current_vibe_roadmap, render_whats_next_vibe
 
     result = build_current_vibe_roadmap(root=root, write=not no_write)
@@ -211,6 +225,24 @@ def current_vibe_roadmap(root: str, no_write: bool, json_output: bool):
     if not no_write:
         click.echo(f"Wrote {Path(result['path']).name}")
     click.echo(render_whats_next_vibe(result))
+
+
+@main.command(name="current-roadmap")
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--no-write", is_flag=True, help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.")
+@click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
+def current_roadmap(root: str, no_write: bool, json_output: bool):
+    """Build the current roadmap snapshot and optionally write TLDROADMAP.md."""
+    _run_current_roadmap(root, no_write, json_output)
+
+
+@main.command(name="current-vibe-roadmap", hidden=True)
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--no-write", is_flag=True, help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.")
+@click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
+def current_vibe_roadmap_legacy(root: str, no_write: bool, json_output: bool):
+    """Compatibility alias for the previous current-roadmap command name."""
+    _run_current_roadmap(root, no_write, json_output)
 
 
 @main.group()

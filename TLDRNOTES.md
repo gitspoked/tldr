@@ -12,9 +12,9 @@ Trust order matters:
 
 - First: source code, tests, and manifests
 - Second: bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, and `TLDROADMAP.md`
-- Third: planning digest: `TLDRPLANS.md`
+- Third: planning digest: `.tldr/roadmap/TLDRPLANS.md`
 - Fourth: tactical notes: `TLDRNOTES.md`
-- Fifth: raw note drops: `TLDRPLANS.*.md`
+- Fifth: raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`
 - Sixth: local operational state under `.tldr/work/`
 - Last: generated files under `.claude/`
 
@@ -23,9 +23,9 @@ The `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md` files are useful, but they a
 Context classification:
 
 - Bedrock context: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDROADMAP.md`
-- Planning digest: `TLDRPLANS.md`
+- Planning digest: `.tldr/roadmap/TLDRPLANS.md`
 - Tactical notes: `TLDRNOTES.md`
-- Raw note drops: `TLDRPLANS.*.md`
+- Raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`
 - Generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
 - Scratch / non-bedrock notes: `TLDREADME.md`
 
