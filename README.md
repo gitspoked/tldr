@@ -15,6 +15,9 @@ tldr watch /path/to/your/code   # stay current on file saves
 tldr ask "how does X work?"     # RAG-powered answer from CLI
 tldr doctor --diagnostics path/to/file.py --line 42  # human-facing diagnostics report
 tldr summary                    # what changed since the last summary checkpoint
+tldr plans-capture .            # paste notes until Ctrl-D, save a TLDRPLANS.<timestamp>.md drop
+tldr whats-next-vibe .          # show the next strategic question and grounded options
+tldr current-vibe-roadmap .     # refresh TLDRPLANS.md and write TLDROADMAP.md
 ```
 
 ## What It Does
@@ -117,6 +120,8 @@ For human-facing code health, add `--diagnostics path/to/file.py` to `tldr docto
 
 `tldr summary` prints commits, working tree changes, workboard updates, and session notes since the last local summary checkpoint, then advances that checkpoint unless you pass `--no-mark-checked`.
 
+`tldr plans-capture` reads freeform notes, links, example repos, and pasted context from stdin until Ctrl-D, stores the raw drop as `TLDRPLANS.<timestamp>.md`, and refreshes the consolidated `TLDRPLANS.md` digest. Then `tldr whats-next-vibe` turns README intent, captured notes, workboard state, and grounded planning signals into the next strategic question to ask. `tldr current-vibe-roadmap` writes `TLDROADMAP.md` as the current human-facing roadmap snapshot.
+
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 
 For bedrock contract checks, run `.venv/bin/python -m pytest -m bedrock -q`. The pytest summary prints a GO/NO-GO bedrock gate report with the covered use case, similar use cases, and reliance weight for each critical contract test.
@@ -207,7 +212,7 @@ Config only. No code change.
 
 ```
 tldreadme/
-├── cli.py          # init | watch | serve | ask | summary | children
+├── cli.py          # init | watch | serve | ask | summary | roadmap | children
 ├── parser.py       # compatibility facade for ASTs, deps, and docs
 ├── asts.py         # tree-sitter AST extraction
 ├── deps.py         # manifest dependency extraction
@@ -218,6 +223,7 @@ tldreadme/
 ├── search.py       # ripgrep wrapper (rg_search, rg_files, rg_count)
 ├── hot_index.py    # pre-cached top 100 symbols for instant lookup
 ├── rag.py          # RAG engine + grounded planning helpers
+├── roadmap.py      # TLDRPLANS capture + TLDROADMAP generation
 ├── chains.py       # daisy-chained tool sequences (know, impact, discover, explain)
 ├── generator.py    # TLDR.md generator from indexed knowledge
 ├── watcher.py      # fswatch incremental re-indexing
@@ -259,6 +265,7 @@ New agent-facing behavior should extend one of those four tools or stay in the `
 Human trust hierarchy:
 
 - bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDRNOTES.md`
+- planning context: `TLDRPLANS.md`, `TLDRPLANS.*.md`, `TLDROADMAP.md`
 - generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
 - operational state: `.tldr/work/*`
 - source of truth remains the code, tests, and manifests

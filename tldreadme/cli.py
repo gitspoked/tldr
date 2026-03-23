@@ -162,6 +162,57 @@ def summary(root: str, since: str | None, no_mark_checked: bool, limit: int, jso
     click.echo(json.dumps(result, indent=2, default=str) if json_output else render_summary(result))
 
 
+@main.command(name="plans-capture")
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--json-output", is_flag=True, help="Print the raw capture payload as JSON.")
+def plans_capture(root: str, json_output: bool):
+    """Capture pasted planning notes into TLDRPLANS.<timestamp>.md and refresh TLDRPLANS.md."""
+    from .roadmap import capture_plan_input
+
+    click.echo(f"Paste planning notes, links, and examples. Ctrl-D saves to {Path(root) / 'TLDRPLANS.<timestamp>.md'}")
+    text = sys.stdin.read()
+    if not text.strip():
+        raise click.ClickException("No planning input received on stdin.")
+
+    result = capture_plan_input(text, root=root)
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    click.echo(f"Saved capture: {Path(result['capture_path']).name}")
+    click.echo(f"Updated plans digest: {Path(result['plans_path']).name}")
+    click.echo(f"Captured notes tracked: {result['captures_count']}")
+
+
+@main.command(name="whats-next-vibe")
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
+def whats_next_vibe(root: str, json_output: bool):
+    """Show the next strategic question and grounded options for the repository."""
+    from .roadmap import render_whats_next_vibe, whats_next_vibe as build_whats_next_vibe
+
+    result = build_whats_next_vibe(root=root)
+    click.echo(json.dumps(result, indent=2, default=str) if json_output else render_whats_next_vibe(result))
+
+
+@main.command(name="current-vibe-roadmap")
+@click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--no-write", is_flag=True, help="Do not write TLDROADMAP.md or refresh TLDRPLANS.md.")
+@click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
+def current_vibe_roadmap(root: str, no_write: bool, json_output: bool):
+    """Build the current roadmap snapshot and optionally write TLDROADMAP.md."""
+    from .roadmap import build_current_vibe_roadmap, render_whats_next_vibe
+
+    result = build_current_vibe_roadmap(root=root, write=not no_write)
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    if not no_write:
+        click.echo(f"Wrote {Path(result['path']).name}")
+    click.echo(render_whats_next_vibe(result))
+
+
 @main.group()
 def children():
     """List and acknowledge nested child projects under the current repository."""
