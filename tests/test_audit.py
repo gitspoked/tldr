@@ -249,6 +249,23 @@ def test_list_policy_profiles_includes_owasp_mcp():
     assert any(profile["id"] == "owasp-mcp" for profile in profiles)
 
 
+def test_save_and_read_security_state(tmp_path):
+    report = {
+        "category": "deps",
+        "root": str(tmp_path),
+        "summary": {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "unknown": 0, "kev": 0, "total": 0},
+        "status": "ok",
+        "ok": True,
+    }
+
+    saved = audit.save_audit_report(report, root=str(tmp_path))
+    state = audit.read_security_state(root=str(tmp_path))
+
+    assert Path(saved["path"]).exists()
+    assert state["latest_audit_path"] == saved["latest_path"]
+    assert state["latest_report"]["category"] == "deps"
+
+
 def test_run_semgrep_parses_json_findings(monkeypatch, tmp_path):
     monkeypatch.setattr(
         audit.subprocess,
