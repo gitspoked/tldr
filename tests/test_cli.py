@@ -11,6 +11,9 @@ def test_cli_help():
     assert result.exit_code == 0
     assert "TLDREADME" in result.output
     assert "children" in result.output
+    assert "plans-capture" in result.output
+    assert "whats-next-vibe" in result.output
+    assert "current-vibe-roadmap" in result.output
     assert "lsp" not in result.output
     assert "lsp-symbols" not in result.output
 
@@ -67,6 +70,27 @@ def test_cli_summary_help():
     assert result.exit_code == 0
     assert "--since" in result.output
     assert "--no-mark-checked" in result.output
+
+
+def test_cli_plans_capture_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["plans-capture", "--help"])
+    assert result.exit_code == 0
+    assert "TLDRPLANS.<timestamp>.md" in result.output
+
+
+def test_cli_whats_next_vibe_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["whats-next-vibe", "--help"])
+    assert result.exit_code == 0
+    assert "strategic question" in result.output.lower()
+
+
+def test_cli_current_vibe_roadmap_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["current-vibe-roadmap", "--help"])
+    assert result.exit_code == 0
+    assert "--no-write" in result.output
 
 
 def test_cli_children_help():
@@ -260,6 +284,84 @@ def test_cli_summary_renders_report(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert "Summary since 2026-03-22T00:00:00+00:00" in result.output
+
+
+def test_cli_plans_capture_reads_stdin(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.roadmap.capture_plan_input",
+        lambda _text, root: {
+            "capture_path": str(tmp_path / "TLDRPLANS.20260323-120000.md"),
+            "plans_path": str(tmp_path / "TLDRPLANS.md"),
+            "captures_count": 3,
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["plans-capture", str(tmp_path)], input="notes\nlinks\n")
+
+    assert result.exit_code == 0
+    assert "Saved capture: TLDRPLANS.20260323-120000.md" in result.output
+    assert "Updated plans digest: TLDRPLANS.md" in result.output
+
+
+def test_cli_whats_next_vibe_renders_report(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.roadmap.whats_next_vibe",
+        lambda root: {
+            "project": "demo",
+            "project_intent": "Turn context into action.",
+            "completion": {"percent": 50.0, "tasks_done": 1, "tasks_total": 2, "plan_count": 1},
+            "current_plan": {"title": "Audit", "status": "in_progress"},
+            "current_code_status": {"source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}},
+            "strategic_question": "What is the most strategic next question?",
+            "top_goal": "Add audit",
+            "next_options": [],
+            "recommended_next_action": "Use repo_lookup first.",
+            "next_tool": "repo_lookup",
+            "direction_signals": [],
+        },
+    )
+    monkeypatch.setattr(
+        "tldreadme.roadmap.render_whats_next_vibe",
+        lambda payload: f"What's next vibe for {payload['project']}\n{payload['strategic_question']}",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["whats-next-vibe", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "What's next vibe for demo" in result.output
+
+
+def test_cli_current_vibe_roadmap_writes_report(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.roadmap.build_current_vibe_roadmap",
+        lambda root, write: {
+            "path": str(tmp_path / "TLDROADMAP.md"),
+            "project": "demo",
+            "strategic_question": "What is the most strategic next question?",
+            "project_intent": "Turn context into action.",
+            "completion": {"percent": 50.0, "tasks_done": 1, "tasks_total": 2, "plan_count": 1},
+            "current_plan": {"title": "Audit", "status": "in_progress"},
+            "current_code_status": {"source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}},
+            "top_goal": "Add audit",
+            "next_options": [],
+            "recommended_next_action": "Use repo_lookup first.",
+            "next_tool": "repo_lookup",
+            "direction_signals": [],
+        },
+    )
+    monkeypatch.setattr(
+        "tldreadme.roadmap.render_whats_next_vibe",
+        lambda payload: f"What's next vibe for {payload['project']}\n{payload['strategic_question']}",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["current-vibe-roadmap", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Wrote TLDROADMAP.md" in result.output
+    assert "What's next vibe for demo" in result.output
 
 
 def test_cli_children_list_renders_report(monkeypatch, tmp_path):
