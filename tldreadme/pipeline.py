@@ -59,7 +59,7 @@ def run_init(directory: Path, output_dir: str = ".claude"):
     console.print(f"  Written: [bold]{claude_path}[/]\n")
 
     # Summary
-    console.print("[bold green]Done.[/] Your codebase is now KNOWN.\n")
+    console.print("[bold green]Done.[/] Codebase indexed.\n")
     console.print(f"  MCP server:  [dim]tldr serve[/]")
     console.print(f"  Watch mode:  [dim]tldr watch {directory}[/]")
     console.print(f"  Ask:         [dim]tldr ask \"how does X work?\"[/]")

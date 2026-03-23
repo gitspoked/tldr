@@ -1,2 +1,2 @@
-"""TLDREADME — TL;DR for any codebase. Makes LLMs KNOW your code."""
+"""TLDREADME — TL;DR for any codebase."""
 __version__ = "0.1.2"

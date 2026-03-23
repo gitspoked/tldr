@@ -10,9 +10,9 @@ TLDREADME parses codebases via tree-sitter, embeds symbols into Qdrant, builds c
 
 ```bash
 # Install (editable, into venv)
-python3.12 -m venv .venv && source .venv/bin/activate && pip install -e .
+python3.12 -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]'
 
-# Start infrastructure (Qdrant on :16333, FalkorDB on :16379)
+# Start infrastructure (Qdrant on :6333, FalkorDB on :6379)
 docker compose up -d
 
 # For cloud LLM instead of Ollama:
@@ -20,9 +20,13 @@ docker compose -f docker-compose.llm.yml up -d
 
 # CLI command: `tldr`
 tldr init /path/to/code      # full pipeline: parse -> embed -> graph -> generate
-tldr serve                    # MCP server (stdio, not HTTP)
+tldr serve                    # MCP server (stdio)
+tldr serve --transport sse -p 8900   # MCP server over SSE
 tldr watch /path/to/code     # incremental re-index on file saves
 tldr ask "question"          # RAG-powered CLI answer
+
+# Tests
+python3 -m pytest -q
 ```
 
 
@@ -34,7 +38,9 @@ The pipeline flows: **parse -> embed -> graph -> generate**, orchestrated by `pi
 
 ```
 Source files
-  -> parser.py (tree-sitter AST -> Symbol, Import, CallSite dataclasses)
+  -> asts.py (tree-sitter AST -> Symbol, Import, CallSite dataclasses)
+  -> deps.py (manifest dependency extraction)
+  -> context_docs.py (README/CLAUDE/AGENTS scanners)
   -> embedder.py (LiteLLM embedding -> Qdrant collection "tldreadme_code")
   -> grapher.py (FalkorDB graph "tldreadme" with Symbol/File/Module/Import nodes)
   -> hot_index.py (top 100 symbols cached -> .tldr/hot_index.json)
@@ -43,7 +49,10 @@ Source files
 
 ### Module Roles
 
-- **parser.py** — The largest module. Extracts `Symbol`, `Import`, `CallSite`, `Dependency`, `ContextDoc` dataclasses. Handles 14 languages via tree-sitter. Also contains dependency extraction from manifest files (Cargo.toml, package.json, go.mod, pyproject.toml, requirements.txt) and context doc scanning (CLAUDE.md, README.md, etc.).
+- **parser.py** — Compatibility facade. Re-exports AST parsing, dependency extraction, and context-doc scanning during the module split.
+- **asts.py** — Tree-sitter AST extraction. Handles supported languages and produces `ParseResult`, `Symbol`, `Import`, and `CallSite`.
+- **deps.py** — Manifest dependency extraction from Cargo.toml, package.json, go.mod, pyproject.toml, and requirements.txt.
+- **context_docs.py** — Scans CLAUDE.md, README.md, AGENTS.md, and related project docs into structured sections.
 - **embedder.py** — `CodeEmbedder` class wraps Qdrant. `embed_batch()` for bulk, `embed_text()` for single queries. Collection auto-creates on first use with dimension auto-detection.
 - **grapher.py** — `CodeGrapher` class wraps FalkorDB (Redis protocol). Graph schema: `(Module)-[:CONTAINS]->(File)-[:DEFINES]->(Symbol)`, `(Symbol)-[:CALLS]->(Symbol)`, `(File)-[:IMPORTS]->(Import)`. Query methods: `get_callers`, `get_callees`, `get_module_symbols`, `get_flow`, `get_dependents`.
 - **chains.py** — Composed tool sequences: `know` (80% tool: hot_index -> rg -> graph), `impact` (15%: rg counts -> graph dependents -> severity), `discover` (5%: rg + semantic merge), `explain` (everything: know -> impact -> discover -> LLM synthesis).
@@ -56,11 +65,11 @@ Source files
 ### Key Design Decisions
 
 - **LLM routing**: `embedder.py` defines `EMBED_MODEL`, `CHAT_MODEL`, `_api_base()`. If `LITELLM_URL` env var is set, routes through LiteLLM proxy; otherwise talks directly to Ollama at `OLLAMA_URL`.
-- **Ports**: `docker-compose.yml` uses non-standard ports (16333 Qdrant, 16379 FalkorDB) to avoid conflicts. Code defaults match. `docker-compose.llm.yml` uses standard ports (6333, 6379) — override via `QDRANT_URL` / `FALKORDB_URL` env vars.
+- **Ports**: both compose files now use standard ports by default: Qdrant `6333` and FalkorDB `6379`.
 - **Singleton connections**: `_shared.py` provides `get_embedder()` / `get_grapher()` — one Qdrant/FalkorDB connection per process. All rag.py and chains.py functions use these instead of instantiating per call.
 - **Deterministic Qdrant IDs**: `chunk_id()` hashes `file:name:line` into a stable integer ID. Re-indexing upserts in place instead of clobbering sequential IDs.
-- **MCP server is stdio-only**: `mcp_server.py` uses `mcp.server.stdio.stdio_server`, not HTTP. Claude Code connects via stdin/stdout, configured with `command` + `args` in MCP config.
-- **No tests exist yet.**
+- **MCP transports**: `mcp_server.py` supports both stdio and SSE. Claude Code uses stdio; remote clients can connect over SSE via `tldr serve --transport sse`.
+- **Tests exist under `tests/`** and currently cover CLI entry points, parser behavior, search helpers, embedding chunk helpers, and the hot index.
 
 ## Environment Variables
 
@@ -70,9 +79,9 @@ Source files
 | `LITELLM_URL` | `""` (empty = use Ollama) | LiteLLM proxy URL |
 | `TLDREADME_EMBED_MODEL` | `ollama/nomic-embed-text` | Embedding model |
 | `TLDREADME_CHAT_MODEL` | `ollama/qwen2.5-coder:3b-instruct` | Chat/synthesis model |
-| `QDRANT_URL` | `http://localhost:16333` | Qdrant vector DB |
-| `FALKORDB_URL` | `redis://localhost:16379` | FalkorDB graph DB |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant vector DB |
+| `FALKORDB_URL` | `redis://localhost:6379` | FalkorDB graph DB |
 
 ## Dependencies
 
-Python 3.11+ (3.12 recommended). Key deps: `tree-sitter` 0.21.x + `tree-sitter-languages` 1.10.x (pinned — newer versions break), `litellm`, `qdrant-client`, `falkordb`, `redis`, `watchdog`, `mcp`, `click`, `rich`. Build system: hatchling.
+Python 3.11+ (3.12 recommended). Key deps: `tree-sitter` 0.21.x + `tree-sitter-languages` 1.10.x (pinned — newer versions break), `litellm`, `qdrant-client`, `falkordb`, `redis`, `watchdog`, `mcp`, `click`, `rich`. Build system: hatchling. Install test tooling with `pip install -e '.[dev]'`.
