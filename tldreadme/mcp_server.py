@@ -61,6 +61,12 @@ def _roadmap():
     return load_module("tldreadme.roadmap")
 
 
+def _audit():
+    """Load the audit/security helpers only when needed."""
+
+    return load_module("tldreadme.audit")
+
+
 def _tool_meta(
     *,
     category: str,
@@ -134,6 +140,9 @@ TOOL_METADATA = {
     "capture_plans": _tool_meta(category="planning", priority="advanced", read_only=False, latency="fast", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["whats_next", "current_roadmap"]),
     "whats_next": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["repo_next_action", "repo_lookup"]),
     "current_roadmap": _tool_meta(category="planning", priority="advanced", read_only=False, latency="medium", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["whats_next"]),
+    "audit_run": _tool_meta(category="security", priority="advanced", read_only=False, latency="medium", backends=["filesystem", "subprocess"], profiles=["full"], fallback_to=[]),
+    "audit_profiles": _tool_meta(category="security", priority="advanced", read_only=True, latency="fast", backends=["filesystem"], profiles=["full"], fallback_to=[]),
+    "audit_kev_refresh": _tool_meta(category="security", priority="advanced", read_only=False, latency="medium", backends=["filesystem"], profiles=["full"], fallback_to=[]),
 }
 
 TOOL_REQUIRED_BACKENDS = {
@@ -392,6 +401,12 @@ def _list_static_resources(tool_profile: str = DEFAULT_TOOL_PROFILE) -> list[Res
             description="Canonical current session snapshot with active-plan, overlap, and note context.",
             mimeType="application/json",
         ),
+        Resource(
+            name="security",
+            uri="repo://security",
+            description="Latest saved audit report, KEV cache location, and supported security profiles.",
+            mimeType="application/json",
+        ),
     ]
 
 
@@ -541,6 +556,9 @@ def _read_resource_text(uri: str, tool_profile: str = DEFAULT_TOOL_PROFILE, capa
 
     if target == "session" and path_value == "current":
         return json.dumps(_workboard().current_plan(), indent=2)
+
+    if target == "security":
+        return json.dumps(_audit().read_security_state(), indent=2)
 
     if target == "module":
         return json.dumps(_rag().read_module(path_value), indent=2, default=str)
@@ -976,6 +994,48 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                             "description": "Whether to write TLDROADMAP.md and refresh the TLDRPLANS digest",
                             "default": False,
                         },
+                    },
+                },
+            ),
+            Tool(
+                name="audit_run",
+                description=(
+                    "FULL PROFILE. Run the local security audit for deps, code, secrets, llm, or all. "
+                    "Supports offline OSV mode, KEV prioritization, OWASP profiles, optional Snyk preference, and report persistence."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "category": {"type": "string", "enum": ["deps", "code", "secrets", "llm", "all"]},
+                        "root": {"type": "string", "description": "Repository root (optional)"},
+                        "dry_run": {"type": "boolean", "default": False},
+                        "garak_config": {"type": "string", "description": "Optional Garak config path"},
+                        "offline": {"type": "boolean", "default": False},
+                        "download_offline_db": {"type": "boolean", "default": False},
+                        "kev_catalog_path": {"type": "string", "description": "Optional local KEV JSON path"},
+                        "profile": {"type": "string", "enum": ["owasp-web", "owasp-api", "owasp-llm", "owasp-mcp"]},
+                        "prefer_snyk": {"type": "boolean", "default": False},
+                        "save_report": {"type": "boolean", "default": False},
+                    },
+                    "required": ["category"],
+                },
+            ),
+            Tool(
+                name="audit_profiles",
+                description="FULL PROFILE. List the supported OWASP-oriented audit profiles and their focus areas.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            Tool(
+                name="audit_kev_refresh",
+                description="FULL PROFILE. Download and cache the CISA Known Exploited Vulnerabilities catalog under .tldr/security/.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "output_path": {"type": "string", "description": "Optional custom local path for the KEV JSON cache"},
+                        "url": {"type": "string", "description": "Optional mirrored KEV feed URL"},
                     },
                 },
             ),
@@ -1856,6 +1916,35 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             result = _roadmap().build_current_vibe_roadmap(
                 root=arguments.get("root", "."),
                 write=arguments.get("write", False),
+            )
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
+        if name == "audit_run":
+            audit_module = _audit()
+            result = audit_module.run_audit(
+                arguments["category"],
+                root=arguments.get("root", "."),
+                dry_run=arguments.get("dry_run", False),
+                garak_config=arguments.get("garak_config"),
+                offline=arguments.get("offline", False),
+                download_offline_db=arguments.get("download_offline_db", False),
+                kev_catalog_path=arguments.get("kev_catalog_path"),
+                profile=arguments.get("profile"),
+                prefer_snyk=arguments.get("prefer_snyk", False),
+            )
+            if arguments.get("save_report", False):
+                result["saved_report"] = audit_module.save_audit_report(result, root=arguments.get("root", "."))
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
+        if name == "audit_profiles":
+            result = _audit().list_policy_profiles()
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
+        if name == "audit_kev_refresh":
+            audit_module = _audit()
+            result = audit_module.refresh_kev_catalog(
+                output_path=arguments.get("output_path", audit_module.DEFAULT_KEV_PATH),
+                url=arguments.get("url", audit_module.DEFAULT_KEV_URL),
             )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 

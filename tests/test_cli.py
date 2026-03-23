@@ -73,6 +73,7 @@ def test_cli_audit_deps_help():
     assert "--kev-catalog" in result.output
     assert "--profile" in result.output
     assert "--prefer-snyk" in result.output
+    assert "--save-report" in result.output
 
 
 def test_cli_lsp_help():
@@ -151,6 +152,38 @@ def test_cli_audit_json_output(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert '"category": "deps"' in result.output
+
+
+def test_cli_audit_save_report_in_json_output(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.audit.run_audit",
+        lambda category, **_kwargs: {
+            "category": category,
+            "root": str(tmp_path),
+            "ok": True,
+            "status": "ok",
+            "summary": {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0, "total": 0},
+            "checks": [],
+            "scanners": [],
+            "policy_profile": None,
+            "recommended_next_action": "Run the next audit.",
+            "verification_commands": [f"tldr audit {category}"],
+        },
+    )
+    monkeypatch.setattr(
+        "tldreadme.audit.save_audit_report",
+        lambda report, **_kwargs: {
+            "path": str(tmp_path / "reports" / f"{report['category']}.json"),
+            "latest_path": str(tmp_path / "latest-audit.json"),
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["audit", "deps", str(tmp_path), "--json-output", "--save-report"])
+
+    assert result.exit_code == 0
+    assert '"saved_report"' in result.output
+    assert '"latest_path"' in result.output
 
 
 def test_cli_audit_profiles(monkeypatch):

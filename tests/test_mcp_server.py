@@ -95,6 +95,20 @@ def test_grounded_planning_tools_remain_available_without_llm():
     assert "current_roadmap" in full_tools
 
 
+def test_full_profile_exposes_security_audit_tools_but_router_does_not():
+    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": False, "vector": False, "graph": False, "llm": False, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
+
+    router_tools = mcp_server._tool_names_for_profile("router", capabilities=capabilities)
+    full_tools = mcp_server._tool_names_for_profile("full", capabilities=capabilities)
+
+    assert "audit_run" not in router_tools
+    assert "audit_profiles" not in router_tools
+    assert "audit_kev_refresh" not in router_tools
+    assert "audit_run" in full_tools
+    assert "audit_profiles" in full_tools
+    assert "audit_kev_refresh" in full_tools
+
+
 def test_tooling_payload_prioritizes_repo_next_action_when_overlap_exists(monkeypatch):
     capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": True, "vector": True, "graph": True, "llm": True, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
     monkeypatch.setattr(mcp_server, "_routing_signals", lambda: {"has_current_plan": True, "has_current_task": True, "has_next_action": True, "has_overlaps": True, "unknown_children": 0})
@@ -144,6 +158,30 @@ def test_read_roadmap_notes_and_plans_digest_resources(monkeypatch):
     assert roadmap_payload["path"] == "TLDROADMAP.md"
     assert notes_payload["path"] == "TLDRNOTES.md"
     assert plans_payload["path"] == ".tldr/roadmap/TLDRPLANS.md"
+
+
+def test_read_security_resource(monkeypatch):
+    audit_module = type(
+        "Audit",
+        (),
+        {
+            "read_security_state": staticmethod(
+                lambda: {
+                    "security_root": ".tldr/security",
+                    "latest_audit_path": ".tldr/security/latest-audit.json",
+                    "reports": [".tldr/security/reports/deps-20260323-010101.json"],
+                    "profiles": [{"id": "owasp-mcp"}],
+                }
+            )
+        },
+    )()
+    monkeypatch.setattr(mcp_server, "_audit", lambda: audit_module)
+
+    payload = json.loads(mcp_server._read_resource_text("repo://security"))
+
+    assert payload["security_root"] == ".tldr/security"
+    assert payload["latest_audit_path"] == ".tldr/security/latest-audit.json"
+    assert payload["profiles"][0]["id"] == "owasp-mcp"
 
 
 def test_read_current_session_resource(monkeypatch):

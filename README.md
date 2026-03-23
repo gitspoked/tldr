@@ -137,6 +137,8 @@ Missing scanners degrade to doctor-style guidance instead of crashing. Start wit
 
 `tldr audit` is intentionally local-first and human-first. It does not replace dedicated security platforms; it gives you a fast repo-local baseline that is safe to run before CI, before commits, or before handing work to an agent.
 
+Add `--save-report` when you want to persist the JSON payload under `.tldr/security/reports/` and refresh `.tldr/security/latest-audit.json`.
+
 Suggested human flow:
 
 ```bash
@@ -171,8 +173,13 @@ Security extensions built into the current audit flow:
 - `--kev-catalog PATH` annotates dependency findings with CISA Known Exploited Vulnerability priority when a local KEV JSON catalog is present
 - `--profile owasp-web|owasp-api|owasp-llm|owasp-mcp` adds policy-oriented follow-up guidance without pretending OWASP is a vulnerability feed
 - `--prefer-snyk` lets authenticated Snyk become the deps/code scanner without changing the local-first default
+- `--save-report` stores the latest audit JSON locally so humans and agents can inspect the current security state without rerunning scans
 - `tldr audit kev-refresh` caches the official CISA KEV catalog under `.tldr/security/`
 - `tldr audit profiles` shows the current OWASP-oriented profile set and the categories each one emphasizes
+
+Agent/MCP security surface:
+- `repo://security` exposes the latest saved audit report, recent local report files, KEV cache location, and supported profiles
+- `audit_run`, `audit_profiles`, and `audit_kev_refresh` are available in `--tool-profile full` for agent-driven security workflows without widening the router-default surface
 
 What to use when:
 - NVD and OSV: vulnerability truth and dependency correlation

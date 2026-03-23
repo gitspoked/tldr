@@ -98,10 +98,11 @@ def _run_audit_cli(
     kev_catalog: str | None = None,
     profile: str | None = None,
     prefer_snyk: bool = False,
+    save_report: bool = False,
 ):
     """Shared handler for human-facing audit commands."""
 
-    from .audit import render_audit_report, run_audit
+    from .audit import render_audit_report, run_audit, save_audit_report
 
     report = run_audit(
         category,
@@ -114,7 +115,17 @@ def _run_audit_cli(
         profile=profile,
         prefer_snyk=prefer_snyk,
     )
-    click.echo(json.dumps(report, indent=2, default=str) if json_output else render_audit_report(report))
+    saved = save_audit_report(report, root=root) if save_report else None
+    if json_output:
+        payload = dict(report)
+        if saved:
+            payload["saved_report"] = saved
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+
+    click.echo(render_audit_report(report))
+    if saved:
+        click.echo(f"Saved report: {saved['path']}")
 
 
 @audit.command("deps")
@@ -124,6 +135,7 @@ def _run_audit_cli(
 @click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanner when available.")
+@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
 def audit_deps(
@@ -133,6 +145,7 @@ def audit_deps(
     kev_catalog: str | None,
     profile: str | None,
     prefer_snyk: bool,
+    save_report: bool,
     dry_run: bool,
     json_output: bool,
 ):
@@ -147,6 +160,7 @@ def audit_deps(
         kev_catalog=kev_catalog,
         profile=profile,
         prefer_snyk=prefer_snyk,
+        save_report=save_report,
     )
 
 
@@ -154,32 +168,35 @@ def audit_deps(
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanner when available.")
+@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_code(root: str, profile: str | None, prefer_snyk: bool, dry_run: bool, json_output: bool):
+def audit_code(root: str, profile: str | None, prefer_snyk: bool, save_report: bool, dry_run: bool, json_output: bool):
     """Audit first-party code with Semgrep or Bandit."""
-    _run_audit_cli("code", root=root, dry_run=dry_run, json_output=json_output, profile=profile, prefer_snyk=prefer_snyk)
+    _run_audit_cli("code", root=root, dry_run=dry_run, json_output=json_output, profile=profile, prefer_snyk=prefer_snyk, save_report=save_report)
 
 
 @audit.command("secrets")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
+@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_secrets(root: str, profile: str | None, dry_run: bool, json_output: bool):
+def audit_secrets(root: str, profile: str | None, save_report: bool, dry_run: bool, json_output: bool):
     """Audit for committed secrets with Gitleaks."""
-    _run_audit_cli("secrets", root=root, dry_run=dry_run, json_output=json_output, profile=profile)
+    _run_audit_cli("secrets", root=root, dry_run=dry_run, json_output=json_output, profile=profile, save_report=save_report)
 
 
 @audit.command("llm")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
 @click.option("--garak-config", type=click.Path(exists=True, dir_okay=False), help="Explicit Garak config file for the target model and probes.")
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
+@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_llm(root: str, garak_config: str | None, profile: str | None, dry_run: bool, json_output: bool):
+def audit_llm(root: str, garak_config: str | None, profile: str | None, save_report: bool, dry_run: bool, json_output: bool):
     """Audit an LLM target with Garak when an explicit config is provided."""
-    _run_audit_cli("llm", root=root, dry_run=dry_run, json_output=json_output, garak_config=garak_config, profile=profile)
+    _run_audit_cli("llm", root=root, dry_run=dry_run, json_output=json_output, garak_config=garak_config, profile=profile, save_report=save_report)
 
 
 @audit.command("all")
@@ -190,6 +207,7 @@ def audit_llm(root: str, garak_config: str | None, profile: str | None, dry_run:
 @click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanners where supported.")
+@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
 def audit_all(
@@ -200,6 +218,7 @@ def audit_all(
     kev_catalog: str | None,
     profile: str | None,
     prefer_snyk: bool,
+    save_report: bool,
     dry_run: bool,
     json_output: bool,
 ):
@@ -215,6 +234,7 @@ def audit_all(
         kev_catalog=kev_catalog,
         profile=profile,
         prefer_snyk=prefer_snyk,
+        save_report=save_report,
     )
 
 

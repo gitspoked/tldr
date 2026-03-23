@@ -9,6 +9,7 @@ from urllib.request import urlopen
 import shlex
 import subprocess
 import sys
+import time
 
 from .runtime import audit_tool_checks
 
@@ -21,6 +22,8 @@ CATEGORY_SCANNERS = {
 }
 DEFAULT_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 DEFAULT_KEV_PATH = ".tldr/security/known_exploited_vulnerabilities.json"
+SECURITY_ROOT = ".tldr/security"
+REPORTS_DIR = "reports"
 POLICY_PROFILES = {
     "owasp-web": {
         "name": "OWASP Top 10",
@@ -730,6 +733,59 @@ def refresh_kev_catalog(
         "url": url,
         "path": str(target),
         "count": len(parsed.get("vulnerabilities", [])),
+    }
+
+
+def _security_root(root: str | Path = ".") -> Path:
+    """Return the repository-local security workspace."""
+
+    return Path(root).resolve() / SECURITY_ROOT
+
+
+def _reports_dir(root: str | Path = ".") -> Path:
+    """Return the report storage directory."""
+
+    return _security_root(root) / REPORTS_DIR
+
+
+def save_audit_report(report: dict[str, object], *, root: str = ".", label: str | None = None) -> dict[str, object]:
+    """Persist an audit report under .tldr/security/reports and update the latest snapshot."""
+
+    reports_dir = _reports_dir(root)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    category = str(report.get("category", "audit"))
+    slug = f"-{label}" if label else ""
+    report_path = reports_dir / f"{category}{slug}-{timestamp}.json"
+    latest_path = _security_root(root) / "latest-audit.json"
+    payload = dict(report)
+    payload["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    latest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {
+        "path": str(report_path),
+        "latest_path": str(latest_path),
+    }
+
+
+def read_security_state(*, root: str = ".") -> dict[str, object]:
+    """Return the local security workspace state and latest saved audit."""
+
+    security_root = _security_root(root)
+    latest_path = security_root / "latest-audit.json"
+    kev_path = security_root / Path(DEFAULT_KEV_PATH).name
+    reports = sorted(_reports_dir(root).glob("*.json"), reverse=True) if _reports_dir(root).exists() else []
+    latest_report = None
+    if latest_path.exists():
+        latest_report = _parse_json(latest_path.read_text(encoding="utf-8"))
+
+    return {
+        "security_root": str(security_root),
+        "kev_catalog_path": str(kev_path) if kev_path.exists() else None,
+        "latest_audit_path": str(latest_path) if latest_path.exists() else None,
+        "latest_report": latest_report,
+        "reports": [str(path) for path in reports[:10]],
+        "profiles": list_policy_profiles(),
     }
 
 
