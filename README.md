@@ -133,6 +133,32 @@ Those planning commands are already the human-executable flow. You do not need w
 
 Missing scanners degrade to doctor-style guidance instead of crashing. Start with `tldr audit all --dry-run`, then install the missing tools you actually want locally.
 
+### Audit Service
+
+`tldr audit` is intentionally local-first and human-first. It does not replace dedicated security platforms; it gives you a fast repo-local baseline that is safe to run before CI, before commits, or before handing work to an agent.
+
+Suggested human flow:
+
+```bash
+.venv/bin/tldr audit all . --dry-run
+.venv/bin/tldr audit deps .
+.venv/bin/tldr audit code .
+.venv/bin/tldr audit secrets .
+.venv/bin/tldr audit llm . --garak-config .tldr/garak.yml
+```
+
+Trust model:
+- local-first default: TLDREADME prefers local scanners and doctor-style install guidance
+- CVE/SCA truth: use the official NVD and OSV-backed scanners for baseline vulnerability checks
+- optional cloud layer: use Snyk when you want authenticated SaaS analysis, monitoring, and organization-level reporting
+
+Snyk is a good optional second layer, not the default first layer for this project. The official Snyk CLI requires authentication with `snyk auth`, then uses commands like `snyk test` for open-source dependencies, `snyk code test` for SAST, and `snyk monitor` for continuous monitoring. It can also emit JSON with `--json`, which makes it a reasonable future adapter for `tldr audit`. Because it is account-backed and networked, it does not fit the default privacy-first/local-first path as well as OSV-Scanner, pip-audit, Semgrep, Bandit, Gitleaks, and Garak.
+
+Practical recommendation:
+- use `tldr audit` first for local triage
+- use Snyk second if you want org policy, continuous monitoring, or cloud-backed code scanning
+- keep Garak or a future `snyk redteam` style pass for explicit adversarial AI testing, not every quick local audit
+
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 
 For bedrock contract checks, run `.venv/bin/python -m pytest -m bedrock -q`. The pytest summary prints a GO/NO-GO bedrock gate report with the covered use case, similar use cases, and reliance weight for each critical contract test.
