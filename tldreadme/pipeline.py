@@ -16,7 +16,10 @@ console = Console()
 def run_init(directory: Path, output_dir: str = ".claude"):
     """Full pipeline: parse → embed → graph → generate TLDR.md."""
 
-    console.print(f"\n[bold green]TLDREADME[/] initializing [bold]{directory}[/]\n")
+    display_directory = directory
+    directory = directory.resolve()
+
+    console.print(f"\n[bold green]TLDREADME[/] initializing [bold]{display_directory}[/]\n")
 
     # 1. Parse
     console.print("[dim]Parsing code with tree-sitter...[/]")
