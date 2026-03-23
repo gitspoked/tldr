@@ -62,6 +62,16 @@ def test_cli_audit_help():
     assert "all" in result.output
 
 
+def test_cli_audit_deps_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["audit", "deps", "--help"])
+    assert result.exit_code == 0
+    assert "--offline" in result.output
+    assert "--download-offline-db" in result.output
+    assert "--kev-catalog" in result.output
+    assert "--profile" in result.output
+
+
 def test_cli_lsp_help():
     runner = CliRunner()
     result = runner.invoke(main, ["lsp", "--help"])
@@ -123,9 +133,11 @@ def test_cli_audit_json_output(monkeypatch, tmp_path):
             "category": category,
             "root": str(tmp_path),
             "ok": True,
+            "status": "ok",
             "summary": {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0, "total": 0},
             "checks": [],
             "scanners": [],
+            "policy_profile": None,
             "recommended_next_action": "Run the next audit.",
             "verification_commands": [f"tldr audit {category}"],
         },

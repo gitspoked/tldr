@@ -141,9 +141,12 @@ Suggested human flow:
 
 ```bash
 .venv/bin/tldr audit all . --dry-run
+.venv/bin/tldr audit deps . --offline
+.venv/bin/tldr audit deps . --kev-catalog .tldr/security/kev.json
 .venv/bin/tldr audit deps .
 .venv/bin/tldr audit code .
 .venv/bin/tldr audit secrets .
+.venv/bin/tldr audit code . --profile owasp-mcp
 .venv/bin/tldr audit llm . --garak-config .tldr/garak.yml
 ```
 
@@ -158,6 +161,16 @@ Practical recommendation:
 - use `tldr audit` first for local triage
 - use Snyk second if you want org policy, continuous monitoring, or cloud-backed code scanning
 - keep Garak or a future `snyk redteam` style pass for explicit adversarial AI testing, not every quick local audit
+
+Security extensions built into the current audit flow:
+- `--offline` and `--download-offline-db` on dependency scans prefer OSV-Scanner's local database path instead of assuming network access
+- `--kev-catalog PATH` annotates dependency findings with CISA Known Exploited Vulnerability priority when a local KEV JSON catalog is present
+- `--profile owasp-web|owasp-api|owasp-llm|owasp-mcp` adds policy-oriented follow-up guidance without pretending OWASP is a vulnerability feed
+
+What to use when:
+- NVD and OSV: vulnerability truth and dependency correlation
+- CISA KEV: exploit-in-the-wild prioritization
+- OWASP profiles: secure-coding and review emphasis for the current repo surface
 
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 
