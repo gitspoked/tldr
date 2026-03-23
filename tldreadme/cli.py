@@ -97,6 +97,7 @@ def _run_audit_cli(
     download_offline_db: bool = False,
     kev_catalog: str | None = None,
     profile: str | None = None,
+    prefer_snyk: bool = False,
 ):
     """Shared handler for human-facing audit commands."""
 
@@ -111,6 +112,7 @@ def _run_audit_cli(
         download_offline_db=download_offline_db,
         kev_catalog_path=kev_catalog,
         profile=profile,
+        prefer_snyk=prefer_snyk,
     )
     click.echo(json.dumps(report, indent=2, default=str) if json_output else render_audit_report(report))
 
@@ -121,6 +123,7 @@ def _run_audit_cli(
 @click.option("--download-offline-db", is_flag=True, help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.")
 @click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
+@click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanner when available.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
 def audit_deps(
@@ -129,6 +132,7 @@ def audit_deps(
     download_offline_db: bool,
     kev_catalog: str | None,
     profile: str | None,
+    prefer_snyk: bool,
     dry_run: bool,
     json_output: bool,
 ):
@@ -142,17 +146,19 @@ def audit_deps(
         download_offline_db=download_offline_db,
         kev_catalog=kev_catalog,
         profile=profile,
+        prefer_snyk=prefer_snyk,
     )
 
 
 @audit.command("code")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
+@click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanner when available.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_code(root: str, profile: str | None, dry_run: bool, json_output: bool):
+def audit_code(root: str, profile: str | None, prefer_snyk: bool, dry_run: bool, json_output: bool):
     """Audit first-party code with Semgrep or Bandit."""
-    _run_audit_cli("code", root=root, dry_run=dry_run, json_output=json_output, profile=profile)
+    _run_audit_cli("code", root=root, dry_run=dry_run, json_output=json_output, profile=profile, prefer_snyk=prefer_snyk)
 
 
 @audit.command("secrets")
@@ -183,6 +189,7 @@ def audit_llm(root: str, garak_config: str | None, profile: str | None, dry_run:
 @click.option("--download-offline-db", is_flag=True, help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.")
 @click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
 @click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
+@click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanners where supported.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
 def audit_all(
@@ -192,6 +199,7 @@ def audit_all(
     download_offline_db: bool,
     kev_catalog: str | None,
     profile: str | None,
+    prefer_snyk: bool,
     dry_run: bool,
     json_output: bool,
 ):
@@ -206,7 +214,48 @@ def audit_all(
         download_offline_db=download_offline_db,
         kev_catalog=kev_catalog,
         profile=profile,
+        prefer_snyk=prefer_snyk,
     )
+
+
+@audit.command("profiles")
+@click.option("--json-output", is_flag=True, help="Print the raw profile payload as JSON.")
+def audit_profiles(json_output: bool):
+    """List the built-in OWASP-oriented audit profiles."""
+
+    from .audit import list_policy_profiles, render_policy_profiles
+
+    profiles = list_policy_profiles()
+    click.echo(json.dumps(profiles, indent=2, default=str) if json_output else render_policy_profiles())
+
+
+@audit.command("kev-refresh")
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False),
+    default=".tldr/security/known_exploited_vulnerabilities.json",
+    show_default=True,
+    help="Write the CISA KEV JSON catalog to this local path.",
+)
+@click.option(
+    "--url",
+    default="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+    show_default=True,
+    help="Official KEV JSON feed URL. Override only if you mirror the catalog locally.",
+)
+@click.option("--json-output", is_flag=True, help="Print the raw refresh payload as JSON.")
+def audit_kev_refresh(output: str, url: str, json_output: bool):
+    """Download and cache the CISA Known Exploited Vulnerabilities catalog."""
+
+    from .audit import refresh_kev_catalog
+
+    result = refresh_kev_catalog(output_path=output, url=url)
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    click.echo(f"Wrote KEV catalog: {result['path']}")
+    click.echo(f"Entries: {result['count']}")
 
 
 @main.command(name="lsp", hidden=True)

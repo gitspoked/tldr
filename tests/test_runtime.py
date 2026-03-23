@@ -122,3 +122,18 @@ def test_install_options_for_semgrep_include_python_install():
     options = runtime.install_options_for_check(runtime._check("Semgrep", "warn", "missing", category="audit"))
 
     assert any(option["command"] == "python3.12 -m pip install semgrep" for option in options)
+
+
+def test_install_options_for_snyk_include_auth(monkeypatch):
+    monkeypatch.setattr(
+        runtime,
+        "which",
+        lambda name: {
+            "npm": "/opt/homebrew/bin/npm",
+            "brew": "/opt/homebrew/bin/brew",
+        }.get(name),
+    )
+
+    options = runtime.install_options_for_check(runtime._check("Snyk Open Source", "warn", "missing", category="audit"))
+
+    assert any(option["command"] == "snyk auth" for option in options)

@@ -1,6 +1,7 @@
 """Tests for the local audit runner."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 from tldreadme import audit
@@ -187,6 +188,65 @@ def test_run_audit_attaches_policy_profile(monkeypatch, tmp_path):
 
     assert report["policy_profile"]["id"] == "owasp-mcp"
     assert report["policy_profile"]["recommended_categories"] == ["code", "secrets", "llm"]
+
+
+def test_run_audit_can_prefer_snyk(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        audit,
+        "audit_tool_checks",
+        lambda _categories=None: [
+            _audit_check("OSV-Scanner", "osv-scanner"),
+            _audit_check("pip-audit", "pip-audit"),
+            _audit_check("Snyk Open Source", "snyk-oss"),
+        ],
+    )
+    monkeypatch.setattr(
+        audit,
+        "_run_osv_with_options",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("local scanner should not execute when Snyk is preferred")),
+    )
+    monkeypatch.setitem(
+        audit.RUNNERS,
+        "snyk-oss",
+        lambda root, *, dry_run, install_options: audit._base_result(
+            "Snyk Open Source",
+            "ok",
+            f"scanned {root}",
+            command=["snyk", "test"],
+            findings=[],
+            install_options=install_options,
+        ),
+    )
+
+    report = audit.run_audit("deps", root=str(tmp_path), prefer_snyk=True)
+
+    assert report["selected_scanner"] == "snyk-oss"
+    assert report["scanners"][0]["name"] == "Snyk Open Source"
+
+
+def test_refresh_kev_catalog_writes_json(monkeypatch, tmp_path):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"vulnerabilities":[{"cveID":"CVE-2026-0001"}]}'
+
+    monkeypatch.setattr(audit, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+
+    result = audit.refresh_kev_catalog(output_path=str(tmp_path / "kev.json"), url="https://example.com/kev.json")
+
+    assert result["count"] == 1
+    assert Path(result["path"]).exists()
+
+
+def test_list_policy_profiles_includes_owasp_mcp():
+    profiles = audit.list_policy_profiles()
+
+    assert any(profile["id"] == "owasp-mcp" for profile in profiles)
 
 
 def test_run_semgrep_parses_json_findings(monkeypatch, tmp_path):
