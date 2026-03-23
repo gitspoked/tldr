@@ -18,10 +18,16 @@ build/
 *.swp
 *.swo
 .DS_Store
+.pytest_cache/
 
-# Data — all local state lives under .tldr/
-# (hot_index.json, qdrant storage, falkordb storage)
-.tldr/
+# Data — bulky local state lives under .tldr/, except tracked workboard plans
+.tldr/*
+!.tldr/work/
+.tldr/work/*
+!.tldr/work/plans/
+!.tldr/work/plans/**
+!.tldr/work/children.yaml
+.tldr/work/sessions/
 *.qbdw
 *.jsonl
 *.tmp
