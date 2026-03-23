@@ -120,7 +120,7 @@ For human-facing code health, add `--diagnostics path/to/file.py` to `tldr docto
 
 `tldr summary` prints commits, working tree changes, workboard updates, and session notes since the last local summary checkpoint, then advances that checkpoint unless you pass `--no-mark-checked`.
 
-`tldr plans-capture` reads freeform notes, links, example repos, and pasted context from stdin until Ctrl-D, stores the raw drop under `.tldr/roadmap/TLDRPLANS.<timestamp>.md`, and refreshes the consolidated `.tldr/roadmap/TLDRPLANS.md` digest. Then `tldr whats-next` turns README intent, captured notes, workboard state, and grounded planning signals into the next strategic question to ask. `tldr current-roadmap` writes `TLDROADMAP.md` as the current durable roadmap draft for the project.
+`tldr plans-capture` reads freeform notes, links, example repos, and pasted context from stdin until Ctrl-D, stores the raw drop under `.tldr/roadmap/TLDRPLANS.<timestamp>.md`, and refreshes the consolidated `.tldr/roadmap/TLDRPLANS.md` digest. Then `tldr whats-next` turns README intent, captured notes, workboard state, and grounded planning signals into the next strategic question to ask. `tldr current-roadmap` writes `TLDROADMAP.md` as the durable roadmap draft for the project, preserving the human-owned top section and refreshing only the lower generated section.
 
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 
@@ -216,7 +216,7 @@ tldreadme/
 ├── parser.py       # compatibility facade for ASTs, deps, and docs
 ├── asts.py         # tree-sitter AST extraction
 ├── deps.py         # manifest dependency extraction
-├── context_docs.py # README/CLAUDE/AGENTS scanner
+├── context_docs.py # README/CLAUDE/AGENTS/GEMINI/roadmap/notes/plans scanner
 ├── embedder.py     # LiteLLM → Qdrant vectors
 ├── grapher.py      # FalkorDB call/import/dependency graph
 ├── lsp.py          # lightweight LSP client + semantic query helpers
@@ -243,11 +243,12 @@ tldreadme/
 
 Beyond tools, TLDREADME now exposes MCP resources and prompts for stable context reads:
 
-- Static resources: `repo://overview`, `repo://health`, `repo://tooling`, `repo://children`
+- Static resources: `repo://overview`, `repo://health`, `repo://tooling`, `repo://children`, `repo://roadmap`, `repo://notes`, `repo://plans-digest`
 - Dynamic resources: `repo://module/{path}`, `repo://symbol/{name}`, `repo://semantic/{path}?line=...`, `repo://workspace-symbols/{query}?path=...`
 - Prompts: `impact-review`, `module-brief`, `semantic-investigation`
 - Router-preferred tools: `repo_next_action`, `repo_lookup`, `change_plan`, `verify_change`
 - Specialist lookup tools in `full`: `scan_context`, `search_context`, `edit_context`, `test_map`, `pattern_search`, `diagnostics_here`, `know`, `impact`
+- Planning helpers in `full`: `capture_plans`, `whats_next`, `current_roadmap`, `suggest_goals`, `best_question`, `goal_flow`, `auto_iterate`
 
 `tldr serve` now defaults to `--tool-profile router`, which exposes a four-intent MCP surface for agent routers: resume, lookup, plan, and verify. Tool exposure is also capability-enforced: tools that require missing backends such as LSP, Qdrant, or FalkorDB are suppressed until those capabilities are available. Use `tldr serve --tool-profile full` when you want the complete debugging and specialist surface.
 
@@ -271,6 +272,8 @@ Human trust hierarchy:
 - generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
 - operational state: `.tldr/work/*`
 - source of truth remains the code, tests, and manifests
+
+`TLDROADMAP.md` is intentionally mixed-trust: keep the human-owned section at the top, and let `tldr current-roadmap` regenerate only the lower auto-generated section.
 
 ## Workboard
 

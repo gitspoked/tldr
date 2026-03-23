@@ -31,6 +31,8 @@ Context classification:
 
 `TLDRNOTES.md` is not the project destination. It is the tactical continuity pad: interruptions, caveats, weird findings, and short-lived reminders that still help a future human or agent resume work.
 
+`TLDROADMAP.md` is the durable direction doc. Keep the human-owned section at the top, and let tooling refresh only the lower auto-generated section.
+
 ## What Is Stable Now
 
 The main agent-facing surface is intentionally small and should stay that way:

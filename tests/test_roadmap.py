@@ -128,14 +128,57 @@ def test_build_current_vibe_roadmap_writes_markdown(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     (tmp_path / "TLDRNOTES.md").write_text("Fallback notes.\n", encoding="utf-8")
+    (tmp_path / "TLDROADMAP.md").write_text(
+        "# TLDROADMAP\n\n"
+        "<!-- HUMAN-OWNED: START -->\n"
+        "## North Star\n\nKeep the roadmap durable.\n"
+        "<!-- HUMAN-OWNED: END -->\n\n"
+        "<!-- AUTO-GENERATED: START -->\n"
+        "old generated content\n"
+        "<!-- AUTO-GENERATED: END -->\n",
+        encoding="utf-8",
+    )
 
     result = roadmap.build_current_vibe_roadmap(root=tmp_path, write=True)
 
     roadmap_path = tmp_path / "TLDROADMAP.md"
     assert roadmap_path.exists()
     rendered = roadmap_path.read_text(encoding="utf-8")
+    assert "<!-- HUMAN-OWNED: START -->" in rendered
+    assert "<!-- AUTO-GENERATED: START -->" in rendered
+    assert "Keep the roadmap durable." in rendered
     assert "Strategic Question To Ask Now" in rendered
     assert "Add local tldr audit pipeline" in rendered
     assert "Completion: 50.0% (1/2 tracked tasks)" in rendered
     assert result["completion"]["percent"] == 50.0
     assert result["planning_inputs"]["captures_count"] == 0
+    assert result["human_owned"].startswith("## North Star")
+
+
+def test_read_roadmap_and_plans_digest(monkeypatch, tmp_path):
+    _stub_roadmap_dependencies(monkeypatch)
+
+    (tmp_path / "README.md").write_text(
+        "# Demo\n\nThis project turns codebase context into a tool-first operating layer for agents.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "TLDRNOTES.md").write_text("# Notes\n\nAudit caveat.\n", encoding="utf-8")
+    (tmp_path / "TLDROADMAP.md").write_text(
+        "# TLDROADMAP\n\n"
+        "<!-- HUMAN-OWNED: START -->\n"
+        "## North Star\n\nHuman-owned roadmap intent.\n"
+        "<!-- HUMAN-OWNED: END -->\n\n"
+        "<!-- AUTO-GENERATED: START -->\n"
+        "## Current Status\n\nGenerated snapshot.\n"
+        "<!-- AUTO-GENERATED: END -->\n",
+        encoding="utf-8",
+    )
+
+    roadmap_payload = roadmap.read_roadmap(tmp_path)
+    notes_payload = roadmap.read_notes(tmp_path)
+    plans_payload = roadmap.read_plans_digest(tmp_path)
+
+    assert roadmap_payload["human_owned"].startswith("## North Star")
+    assert "Generated snapshot." in roadmap_payload["auto_generated"]
+    assert notes_payload["title"] == "Notes"
+    assert "Grounded Next Goals" in plans_payload["content"]

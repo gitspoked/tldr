@@ -90,6 +90,9 @@ def test_grounded_planning_tools_remain_available_without_llm():
     assert "best_question" in full_tools
     assert "goal_flow" in full_tools
     assert "auto_iterate" in full_tools
+    assert "capture_plans" in full_tools
+    assert "whats_next" in full_tools
+    assert "current_roadmap" in full_tools
 
 
 def test_tooling_payload_prioritizes_repo_next_action_when_overlap_exists(monkeypatch):
@@ -120,6 +123,27 @@ def test_read_plans_resource(monkeypatch):
 
     assert payload["count"] == 1
     assert payload["plans"][0]["id"] == "plan-1"
+
+
+def test_read_roadmap_notes_and_plans_digest_resources(monkeypatch):
+    roadmap = type(
+        "Roadmap",
+        (),
+        {
+            "read_roadmap": staticmethod(lambda: {"path": "TLDROADMAP.md", "exists": True, "human_owned": "## North Star", "auto_generated": "## Current Status"}),
+            "read_notes": staticmethod(lambda: {"path": "TLDRNOTES.md", "exists": True, "content": "# Notes"}),
+            "read_plans_digest": staticmethod(lambda: {"path": ".tldr/roadmap/TLDRPLANS.md", "exists": True, "content": "# TLDRPLANS"}),
+        },
+    )()
+    monkeypatch.setattr(mcp_server, "_roadmap", lambda: roadmap)
+
+    roadmap_payload = json.loads(mcp_server._read_resource_text("repo://roadmap"))
+    notes_payload = json.loads(mcp_server._read_resource_text("repo://notes"))
+    plans_payload = json.loads(mcp_server._read_resource_text("repo://plans-digest"))
+
+    assert roadmap_payload["path"] == "TLDROADMAP.md"
+    assert notes_payload["path"] == "TLDRNOTES.md"
+    assert plans_payload["path"] == ".tldr/roadmap/TLDRPLANS.md"
 
 
 def test_read_current_session_resource(monkeypatch):
