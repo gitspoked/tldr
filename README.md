@@ -255,6 +255,13 @@ Treat the router-default surface as bedrock:
 
 New agent-facing behavior should extend one of those four tools or stay in the `full` specialist profile. Workboard plans, sessions, and child-project registries are versioned file-backed documents under `.tldr/work/`, and `parser.py` remains the compatibility facade over the split parser modules.
 
+Human trust hierarchy:
+
+- bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDRNOTES.md`
+- generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
+- operational state: `.tldr/work/*`
+- source of truth remains the code, tests, and manifests
+
 ## Workboard
 
 TLDREADME now includes a file-backed workboard for phased execution planning:
