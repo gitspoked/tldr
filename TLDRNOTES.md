@@ -11,11 +11,17 @@ In plain terms: it is trying to make repo context good enough that an LLM starts
 Trust order matters:
 
 - First: source code, tests, and manifests
-- Second: human-written repo docs like `README.md`, `CLAUDE.md`, and `AGENTS.md`
+- Second: bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, and `TLDRNOTES.md`
 - Third: local operational state under `.tldr/work/`
 - Last: generated files under `.claude/`
 
 The `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md` files are useful, but they are generated summaries. They are not the source of truth over the code.
+
+Context classification:
+
+- Bedrock context: `README.md`, `AGENTS.md`, `CLAUDE.md`, `TLDRNOTES.md`
+- Generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
+- Scratch / non-bedrock notes: `TLDREADME.md`
 
 ## What Is Stable Now
 
