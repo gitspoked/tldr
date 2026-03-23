@@ -1,12 +1,14 @@
 [project]
-name = "tldr"
-author ="Matt Klein <mk@ntele.net>"
+name = "tldreadme"
+authors = [
+    { name = "Matt Klein", email = "mk@ntele.net" },
+]
 version = "0.1.2"
 description = "TLDReadme.md: TL;DR for any codebase. Think gemini, codex, claude-code's /init. With tree-sitter AST w/ Qdrant vectors & FalkorDB graphs for coder context and RAG production. Built in MCP server that makes LLMs KNOW your code. Context Tree Walker for README.md CONTEXT.md, CLAUDE.md and other Markdown files producing exhaustive concise detail, you choose level for Documentation, Agentic Knowledge, SKILLS and the Coupling of Code with Context for LLM's [local-first, remote-next], and in JIT mode, etc."
 requires-python = ">=3.11"
 dependencies = [
-    "tree-sitter>=0.21,<0.22",
-    "tree-sitter-languages>=1.10,<1.11",
+    "tree-sitter==0.21.3",
+    "tree-sitter-languages==1.10.2",
     "litellm>=1.40",
     "qdrant-client>=1.9",
     "falkordb>=1.0",
@@ -14,14 +16,27 @@ dependencies = [
     "watchdog>=4.0",
     "mcp>=1.0",
     "click>=8.1",
+    "questionary>=2.0,<3",
     "rich>=13.0",
     "pydantic>=2.0",
+    "PyYAML>=6.0",
     "httpx>=0.27",
     "tiktoken>=0.7",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.scripts]
 tldr = "tldreadme.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore:Language\\(path, name\\) is deprecated\\. Use Language\\(ptr, name\\) instead\\.:FutureWarning",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["tldreadme"]
