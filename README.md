@@ -87,9 +87,10 @@ Use `repo_next_action` when resuming interrupted work, `repo_lookup` to understa
 
 | Tool | What |
 |------|------|
-| `suggest_goals` | Analyzes the codebase and suggests prioritized next steps. |
-| `best_question` | Given a goal, formulates the RIGHT question to ask, then answers it. |
-| `goal_flow` | Full chain: analyze → goals → question → answer. Cold start to oriented in one call. |
+| `suggest_goals` | Uses active plans, repo state, and concrete feature gaps to rank grounded next steps. |
+| `best_question` | Given a goal, turns it into the next concrete engineering question with file, symbol, risk, and verification hints. |
+| `goal_flow` | Cold-start planning chain: grounded goals → top goal → next best engineering question. |
+| `auto_iterate` | Walks a few ranked candidate goals in sequence without inventing new ones from thin context. |
 
 ## Setup
 
@@ -216,7 +217,7 @@ tldreadme/
 ├── lsp.py          # lightweight LSP client + semantic query helpers
 ├── search.py       # ripgrep wrapper (rg_search, rg_files, rg_count)
 ├── hot_index.py    # pre-cached top 100 symbols for instant lookup
-├── rag.py          # RAG engine + backwards flow (suggest_goals, best_question)
+├── rag.py          # RAG engine + grounded planning helpers
 ├── chains.py       # daisy-chained tool sequences (know, impact, discover, explain)
 ├── generator.py    # TLDR.md generator from indexed knowledge
 ├── watcher.py      # fswatch incremental re-indexing
@@ -228,7 +229,7 @@ tldreadme/
 
 - **Intelligence in, intelligence out.** The quality of TLDR.md determines how smart the LLM is about your code.
 - **Search before writing.** `read_similar` and `discover` exist so you don't reinvent what already exists.
-- **Backwards-first.** The code knows what it needs. `suggest_goals` and `best_question` extract that knowledge; steer end results.
+- **Backwards-first.** Let current repo state, active plans, and concrete feature gaps drive planning before freeform ideation.
 - **Start fast, go deeper only when needed.** `know` (instant) before `explain` (LLM). `impact` (fast) before refactoring.
 - **Scan your code, catalog your deps, fetch docs on demand.** Never parse node_modules or libraries when scanning.
 

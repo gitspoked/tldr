@@ -1,8 +1,42 @@
 """RAG engine — retrieve from Qdrant + FalkorDB, synthesize via LiteLLM."""
 
+from pathlib import Path
+import re
 import subprocess
 from ._shared import get_embedder, get_grapher
 from .lazy import load_module
+
+GENERIC_MAINTENANCE_PATTERNS = (
+    re.compile(r"\b(docstring|docstrings|comment|comments|documentation)\b", re.IGNORECASE),
+    re.compile(r"\bversion control\b", re.IGNORECASE),
+    re.compile(r"\bgit\b", re.IGNORECASE),
+    re.compile(r"\btype annotations?\b", re.IGNORECASE),
+    re.compile(r"\bimports?\b", re.IGNORECASE),
+)
+
+GOAL_STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "into",
+    "your",
+    "code",
+    "repo",
+    "local",
+    "first",
+    "command",
+    "plan",
+    "pipeline",
+    "continue",
+    "active",
+    "should",
+    "work",
+    "next",
+}
 
 
 def _litellm():
@@ -17,6 +51,304 @@ def _embedder_settings() -> tuple[str, str]:
     from .embedder import CHAT_MODEL, _api_base
 
     return CHAT_MODEL, _api_base()
+
+
+def _coding_tools():
+    """Load router-friendly coding tools lazily for planning helpers."""
+
+    return load_module("tldreadme.coding_tools")
+
+
+def _workboard():
+    """Load the workboard lazily for plan-aware suggestion flows."""
+
+    return load_module("tldreadme.workboard")
+
+
+def _repo_root(path: str | None = None) -> Path:
+    """Resolve a repository root for planning-oriented helpers."""
+
+    return Path(path or ".").resolve()
+
+
+def _work_root(path: str | None = None) -> Path:
+    """Return the workboard root beneath the repository root."""
+
+    return _repo_root(path) / ".tldr" / "work"
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    """Deduplicate while preserving order."""
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def _display_path(path: str, repo_root: Path) -> str:
+    """Render a repo-relative path when possible."""
+
+    try:
+        return str(Path(path).resolve().relative_to(repo_root))
+    except Exception:
+        return path
+
+
+def _read_repo_text(repo_root: Path, relative_path: str) -> str:
+    """Read a repo-relative file when present."""
+
+    try:
+        return (repo_root / relative_path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _is_low_signal_goal(text: str) -> bool:
+    """Return whether a proposed goal reads like generic maintenance fluff."""
+
+    return any(pattern.search(text) for pattern in GENERIC_MAINTENANCE_PATTERNS)
+
+
+def _goal_keywords(*parts: str) -> set[str]:
+    """Return normalized meaningful tokens for comparing candidate intent."""
+
+    tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", " ".join(parts).lower())
+        if len(token) >= 4 and token not in GOAL_STOPWORDS
+    }
+    return tokens
+
+
+def _candidate_is_covered_by_active_plan(candidate: dict, active_plan: dict | None) -> bool:
+    """Return whether a generic candidate is already covered by the active plan."""
+
+    if not active_plan:
+        return False
+
+    active_keywords = _goal_keywords(active_plan.get("title", ""), active_plan.get("goal", ""))
+    candidate_keywords = _goal_keywords(candidate.get("title", ""), candidate.get("goal", ""))
+    shared_keywords = active_keywords & candidate_keywords
+    shared_files = set(active_plan.get("files", [])) & set(candidate.get("files", []))
+
+    if len(shared_keywords) >= 3:
+        return True
+    if len(shared_keywords) >= 2 and shared_files:
+        return True
+    return False
+
+
+def _goal_candidate(
+    *,
+    candidate_id: str,
+    title: str,
+    goal: str,
+    why_now: str,
+    files: list[str],
+    evidence: list[str],
+    verification_commands: list[str],
+    priority: float,
+    source: str,
+) -> dict:
+    """Build a normalized planning candidate."""
+
+    return {
+        "id": candidate_id,
+        "title": title,
+        "goal": goal,
+        "why_now": why_now,
+        "files": _dedupe(files),
+        "evidence": _dedupe(evidence),
+        "verification_commands": _dedupe(verification_commands),
+        "priority": round(priority, 2),
+        "source": source,
+    }
+
+
+def _planning_snapshot(path: str | None = None) -> dict:
+    """Gather low-cost grounded planning signals from repo state."""
+
+    repo_root = _repo_root(path)
+    snapshot = {
+        "repo_root": str(repo_root),
+        "repo_next_action": None,
+        "scan_context": None,
+        "current": {},
+    }
+
+    try:
+        snapshot["repo_next_action"] = _coding_tools().repo_next_action(root=str(repo_root))
+    except Exception:
+        snapshot["repo_next_action"] = None
+
+    try:
+        snapshot["scan_context"] = _coding_tools().scan_context(root=str(repo_root), limit=5)
+    except Exception:
+        snapshot["scan_context"] = None
+
+    try:
+        snapshot["current"] = _workboard().current_plan(root=_work_root(str(repo_root)))
+    except Exception:
+        snapshot["current"] = {}
+
+    return snapshot
+
+
+def _active_plan_candidate(snapshot: dict, repo_root: Path) -> dict | None:
+    """Return a candidate that resumes the active tracked plan."""
+
+    current = snapshot.get("current") or {}
+    plan = current.get("plan") or {}
+    session = current.get("session") or {}
+    if not plan or plan.get("status") in {"done", "archived"}:
+        return None
+
+    tasks = [
+        task
+        for phase in plan.get("phases", [])
+        for task in phase.get("tasks", [])
+        if task.get("status") != "done"
+    ]
+    current_task = next((task for task in tasks if task.get("id") == session.get("current_task_id")), None)
+    top_task = current_task or (tasks[0] if tasks else None)
+
+    files = list(plan.get("scope", []))
+    if top_task:
+        files.extend(top_task.get("files", []))
+    files = [_display_path(file_path, repo_root) for file_path in files]
+
+    verification_commands = list(session.get("verification_commands", []))
+    if top_task:
+        verification_commands.extend(top_task.get("verification_commands", []))
+
+    evidence = [
+        f"active plan: {plan.get('title')}",
+        f"plan status: {plan.get('status')}",
+    ]
+    if session.get("current_phase"):
+        evidence.append(f"current phase: {session.get('current_phase')}")
+    if current_task:
+        evidence.append(f"current task: {current_task.get('title')} [{current_task.get('status')}]")
+    overlaps = current.get("overlaps") or []
+    if overlaps:
+        evidence.append(f"overlaps: {len(overlaps)} active")
+
+    why_now = (
+        session.get("next_action")
+        or session.get("current_focus")
+        or f"Resume the active plan `{plan.get('title')}` before creating unrelated work."
+    )
+
+    return _goal_candidate(
+        candidate_id=f"resume-{plan.get('id')}",
+        title=f"Continue active plan: {plan.get('title')}",
+        goal=plan.get("goal") or plan.get("title") or "Continue the active plan",
+        why_now=why_now,
+        files=files,
+        evidence=evidence,
+        verification_commands=verification_commands,
+        priority=1.0,
+        source="active_plan",
+    )
+
+
+def _feature_gap_candidates(snapshot: dict, repo_root: Path) -> list[dict]:
+    """Return grounded feature-gap candidates from repo code and docs."""
+
+    candidates: list[dict] = []
+    cli_text = _read_repo_text(repo_root, "tldreadme/cli.py")
+    watcher_text = _read_repo_text(repo_root, "tldreadme/watcher.py")
+    readme_text = _read_repo_text(repo_root, "README.md")
+    notes_text = _read_repo_text(repo_root, "TLDREADME.md")
+    audit_docs_present = any(token in (readme_text + "\n" + notes_text).lower() for token in ("audit", "semgrep", "pip-audit", "gitleaks", "garak"))
+
+    if "def audit(" not in cli_text:
+        evidence = [
+            "CLI exposes doctor/summary/children but no audit command.",
+            "No tracked `tldreadme/audit.py` module exists yet.",
+        ]
+        if audit_docs_present:
+            evidence.append("Project notes already point toward a local audit workflow.")
+        candidates.append(
+            _goal_candidate(
+                candidate_id="local-audit-pipeline",
+                title="Add local tldr audit pipeline",
+                goal="Add a local-first `tldr audit` command that runs dependency, code, secrets, and LLM/adversarial checks with actionable local reporting.",
+                why_now="The repo already has doctor, summary, workboard, and router surfaces but still lacks a dedicated local security audit workflow.",
+                files=[
+                    "tldreadme/cli.py",
+                    "tldreadme/runtime.py",
+                    "tldreadme/audit.py",
+                    "README.md",
+                ],
+                evidence=evidence,
+                verification_commands=[
+                    ".venv/bin/python -m pytest -q tests/test_cli.py tests/test_runtime.py",
+                ],
+                priority=0.93 if audit_docs_present else 0.87,
+                source="feature_gap",
+            )
+        )
+
+    if "generate_claude_md" not in watcher_text:
+        candidates.append(
+            _goal_candidate(
+                candidate_id="watcher-context-regeneration",
+                title="Regenerate TLDR context during watch mode",
+                goal="Extend `tldr watch` so code changes refresh generated `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md` instead of only updating embeddings and graph state.",
+                why_now="The watch path updates embeddings and graph state, but human and LLM bootstrap context can still drift until the next full init.",
+                files=[
+                    "tldreadme/watcher.py",
+                    "tldreadme/generator.py",
+                    "tests/test_generator.py",
+                ],
+                evidence=[
+                    "watcher.py currently reparses code and updates Qdrant/FalkorDB only.",
+                    "Generator output is now source-driven and deterministic, so watch-mode regeneration is feasible.",
+                ],
+                verification_commands=[
+                    ".venv/bin/python -m pytest -q tests/test_generator.py",
+                ],
+                priority=0.78,
+                source="feature_gap",
+            )
+        )
+
+    return candidates
+
+
+def _format_goal_candidates(candidates: list[dict], repo_root: Path) -> str:
+    """Render ranked candidates into a concise Markdown summary."""
+
+    if not candidates:
+        return "### Next Goals for Codebase Review\n\nNo grounded feature candidates were found. Re-run `repo_lookup` and `change_plan` against a narrower scope."
+
+    lines = ["### Next Goals for Codebase Review", ""]
+    for index, candidate in enumerate(candidates[:5], start=1):
+        files = ", ".join(f"`{_display_path(path, repo_root)}`" for path in candidate.get("files", [])[:4]) or "`(no file focus yet)`"
+        lines.append(f"#### Goal {index}: {candidate['title']}")
+        lines.append("")
+        lines.append(f"**What to do**: {candidate['goal']}")
+        lines.append("")
+        lines.append(f"**Why now**: {candidate['why_now']}")
+        lines.append("")
+        lines.append(f"**Files to touch**: {files}")
+        if candidate.get("evidence"):
+            lines.append("")
+            lines.append("**Evidence**:")
+            for item in candidate["evidence"][:4]:
+                lines.append(f"- {item}")
+        if candidate.get("verification_commands"):
+            lines.append("")
+            lines.append("**Verification**:")
+            for command in candidate["verification_commands"][:3]:
+                lines.append(f"- `{command}`")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def ask_question(question: str, scope: str | None = None) -> str:
@@ -139,160 +471,156 @@ def tldr(path: str) -> str:
 
 
 def suggest_goals(path: str) -> dict:
-    """BACKWARDS FLOW: Given the code, what should we work on next?
+    """Suggest grounded next goals using active plans and concrete repo feature gaps."""
 
-    Analyzes the codebase state — incomplete patterns, TODOs, dead ends,
-    missing tests, orphan symbols, unused imports, partially-implemented
-    features — and suggests what goals make sense.
-    """
-    grapher = get_grapher()
-    embedder = get_embedder()
+    repo_root = _repo_root(path)
+    snapshot = _planning_snapshot(path)
 
-    # Gather broad codebase signal
-    symbols = grapher.get_module_symbols(path)
+    candidates: list[dict] = []
+    active_plan = _active_plan_candidate(snapshot, repo_root)
+    if active_plan:
+        candidates.append(active_plan)
+    candidates.extend(_feature_gap_candidates(snapshot, repo_root))
 
-    # Find orphans (defined but never called)
-    orphans = []
-    for s in symbols:
-        callers = grapher.get_callers(s["name"])
-        if not callers and s["kind"] in ("function", "method"):
-            orphans.append(s)
+    filtered_candidates: list[dict] = []
+    seen_candidates: set[str] = set()
+    for candidate in candidates:
+        text = f"{candidate['title']} {candidate['goal']} {candidate['why_now']}"
+        if candidate.get("source") != "active_plan" and _is_low_signal_goal(text):
+            continue
+        if candidate.get("source") != "active_plan" and _candidate_is_covered_by_active_plan(candidate, active_plan):
+            continue
+        key = f"{candidate['title'].strip().lower()}::{candidate['goal'].strip().lower()}"
+        if key in seen_candidates:
+            continue
+        seen_candidates.add(key)
+        filtered_candidates.append(candidate)
 
-    # Find stubs (very short functions — likely placeholders)
-    stubs = [s for s in symbols if s.get("signature", "").endswith("...") or s.get("signature", "").endswith("pass")]
+    ranked_candidates = sorted(filtered_candidates, key=lambda item: item.get("priority", 0), reverse=True)
+    top_goal = ranked_candidates[0]["goal"] if ranked_candidates else None
 
-    # Find high-connectivity symbols (most called — the load-bearing walls)
-    load_bearing = []
-    for s in symbols[:50]:  # cap for performance
-        callers = grapher.get_callers(s["name"])
-        if len(callers) >= 3:
-            load_bearing.append({"symbol": s["name"], "caller_count": len(callers)})
-    load_bearing.sort(key=lambda x: x["caller_count"], reverse=True)
-
-    # Semantic search for TODOs, FIXMEs, incomplete patterns
-    todos = embedder.search_similar("TODO FIXME unimplemented incomplete stub", limit=10)
-
-    # Build context and ask LLM to synthesize goals
-    context = f"Module: {path}\n"
-    context += f"Total symbols: {len(symbols)}\n\n"
-
-    if orphans:
-        context += f"Orphan functions (defined but never called — {len(orphans)}):\n"
-        for o in orphans[:10]:
-            context += f"  - {o['name']} ({o['file']})\n"
-        context += "\n"
-
-    if load_bearing:
-        context += f"Load-bearing symbols (most depended on):\n"
-        for lb in load_bearing[:10]:
-            context += f"  - {lb['symbol']} ({lb['caller_count']} callers)\n"
-        context += "\n"
-
-    if todos:
-        context += f"Incomplete/TODO patterns found:\n"
-        for t in todos[:5]:
-            context += f"  - {t['symbol_name']} ({t['file']}:{t['line']}): {t['signature'][:80]}\n"
-        context += "\n"
-
-    prompt = (
-        "You are a principal engineer doing a codebase review.\n"
-        "Based on the analysis below, suggest 3-5 concrete next goals.\n"
-        "For each goal: what to do, why it matters, which files to touch.\n"
-        "Prioritize by impact — what moves the needle most?\n\n"
-        f"{context}"
-    )
-
-    chat_model, api_base = _embedder_settings()
-    resp = _litellm().completion(
-        model=chat_model,
-        messages=[{"role": "user", "content": prompt}],
-        api_base=api_base,
-        max_tokens=1500,
-    )
+    scan_context = snapshot.get("scan_context") or {}
+    current = snapshot.get("current") or {}
+    current_summary = current.get("summary") or {}
+    current_session = current.get("session") or {}
+    current_plan = current.get("plan") or {}
 
     return {
         "module": path,
         "analysis": {
-            "total_symbols": len(symbols),
-            "orphan_count": len(orphans),
-            "load_bearing": load_bearing[:5],
-            "todo_count": len(todos),
+            "repo_root": str(repo_root),
+            "code_file_count": (scan_context.get("source_counts") or {}).get("code", 0),
+            "test_file_count": (scan_context.get("source_counts") or {}).get("tests", 0),
+            "doc_count": (scan_context.get("source_counts") or {}).get("docs", 0),
+            "plan_count": (scan_context.get("source_counts") or {}).get("workboard", 0),
+            "unknown_child_count": ((scan_context.get("children") or {}).get("unknown_count") or 0),
+            "candidate_count": len(ranked_candidates),
+            "current_plan": current_summary,
+            "current_phase": current_session.get("current_phase"),
+            "current_task_id": current_session.get("current_task_id"),
+            "next_action": current_session.get("next_action"),
         },
-        "suggested_goals": resp.choices[0].message.content,
+        "top_goal": top_goal,
+        "candidate_goals": ranked_candidates,
+        "suggested_goals": _format_goal_candidates(ranked_candidates, repo_root),
+        "recommended_next_action": (
+            current_session.get("next_action")
+            or current_session.get("current_focus")
+            or (snapshot.get("repo_next_action") or {}).get("recommended_next_action")
+            or ("Start with the top ranked candidate and confirm it with repo_lookup." if ranked_candidates else "Use repo_lookup to gather more grounded context.")
+        ),
+        "active_plan": {
+            "id": current_plan.get("id"),
+            "title": current_plan.get("title"),
+            "goal": current_plan.get("goal"),
+        } if current_plan else None,
     }
 
 
 def best_question(goal: str, path: str | None = None) -> dict:
-    """BACKWARDS FLOW: Given a goal, what's the RIGHT question to ask this codebase?
+    """Derive a concrete next question from repo lookup and plan signals."""
 
-    Instead of the user guessing what to ask, TLDREADME looks at the code
-    and formulates the precise question that will lead to the best outcome.
-    Then it answers that question against the actual code.
-    """
-    embedder = get_embedder()
-    grapher = get_grapher()
+    repo_root = _repo_root(path)
 
-    # Find code relevant to the goal
-    relevant = embedder.search_similar(goal, limit=10)
+    try:
+        lookup = _coding_tools().repo_lookup(query=goal, root=str(repo_root), limit=8)
+    except Exception:
+        lookup = {}
 
-    # Get graph context for the most relevant symbols
-    graph_ctx = []
-    for chunk in relevant[:5]:
-        name = chunk.get("symbol_name", "")
-        if name:
-            callers = grapher.get_callers(name)
-            callees = grapher.get_callees(name)
-            graph_ctx.append({
-                "symbol": name, "file": chunk["file"],
-                "kind": chunk["kind"], "signature": chunk["signature"],
-                "callers": [c["name"] for c in callers[:5]],
-                "callees": [c["name"] for c in callees[:5]],
-            })
+    try:
+        plan = _coding_tools().change_plan(goal, root=str(repo_root))
+    except Exception:
+        plan = {}
 
-    # Build context
-    context = f"Goal: {goal}\n\n"
-    context += "Relevant code found:\n"
-    for g in graph_ctx:
-        context += f"  - {g['kind']} {g['symbol']} ({g['file']})\n"
-        context += f"    signature: {g['signature']}\n"
-        if g['callers']:
-            context += f"    called by: {', '.join(g['callers'])}\n"
-        if g['callees']:
-            context += f"    calls: {', '.join(g['callees'])}\n"
-    context += "\n"
+    candidate_files = [_display_path(file_path, repo_root) for file_path in plan.get("candidate_files", [])]
+    likely_symbols = _dedupe(list(plan.get("likely_symbols", [])))
+    verification_commands = _dedupe(list(plan.get("verification_commands", [])))
+    risks = _dedupe(list(plan.get("risks", [])))
 
-    # Step 1: Ask LLM to formulate the best question
-    question_prompt = (
-        "You are a senior developer who deeply knows this codebase.\n"
-        "The user wants to achieve this goal:\n\n"
-        f"  \"{goal}\"\n\n"
-        "Based on the relevant code below, what is the PRECISE question\n"
-        "they should be asking? Not the obvious question — the one that\n"
-        "will actually unblock them. The question a dev who already knows\n"
-        "the codebase would ask.\n\n"
-        "Return ONLY the question, nothing else.\n\n"
-        f"{context}"
-    )
+    ranked_hits = lookup.get("ranked_hits", []) or []
+    for hit in ranked_hits:
+        hit_path = hit.get("path")
+        if hit_path:
+            candidate_files.append(_display_path(hit_path, repo_root))
+    candidate_files = _dedupe(candidate_files)
 
-    chat_model, api_base = _embedder_settings()
-    question_resp = _litellm().completion(
-        model=chat_model,
-        messages=[{"role": "user", "content": question_prompt}],
-        api_base=api_base,
-        max_tokens=200,
-    )
-    the_question = question_resp.choices[0].message.content.strip()
+    if candidate_files and likely_symbols:
+        the_question = (
+            f"What is the smallest end-to-end change needed in `{candidate_files[0]}` around "
+            f"`{likely_symbols[0]}` to achieve \"{goal}\", and which verification command should prove it?"
+        )
+    elif candidate_files:
+        the_question = (
+            f"What is the smallest end-to-end change needed in `{candidate_files[0]}` to achieve "
+            f"\"{goal}\", and which verification command should prove it?"
+        )
+    elif likely_symbols:
+        the_question = (
+            f"Which symbol should be changed first to achieve \"{goal}\", and what verification should prove the change is correct?"
+        )
+    else:
+        the_question = (
+            f"What concrete file or symbol should be targeted first to achieve \"{goal}\" safely?"
+        )
 
-    # Step 2: Answer that question against the actual code
-    code_context = _build_context(relevant, [])
-    answer = _synthesize(the_question, code_context)
+    answer_lines = [
+        f"Goal: {goal}",
+        "",
+        "Most grounded next move:",
+        f"- {lookup.get('recommended_next_action') or plan.get('recommended_next_action') or 'Narrow the first edit target before changing code.'}",
+    ]
+    if candidate_files:
+        answer_lines.append("- Primary edit targets: " + ", ".join(f"`{path}`" for path in candidate_files[:4]))
+    if likely_symbols:
+        answer_lines.append("- Likely symbols: " + ", ".join(f"`{name}`" for name in likely_symbols[:4]))
+    if risks:
+        answer_lines.append("- Risks: " + "; ".join(risks[:3]))
+    if verification_commands:
+        answer_lines.append("- Verification: " + "; ".join(f"`{command}`" for command in verification_commands[:3]))
+    if lookup.get("evidence"):
+        answer_lines.append("")
+        answer_lines.append("Grounding evidence:")
+        answer_lines.extend(f"- {item}" for item in lookup.get("evidence", [])[:4])
 
     return {
         "goal": goal,
         "best_question": the_question,
-        "answer": answer,
-        "relevant_symbols": [g["symbol"] for g in graph_ctx],
-        "relevant_files": list(set(g["file"] for g in graph_ctx)),
+        "answer": "\n".join(answer_lines).strip(),
+        "relevant_symbols": likely_symbols[:8],
+        "relevant_files": candidate_files[:8],
+        "recommended_next_action": lookup.get("recommended_next_action") or plan.get("recommended_next_action"),
+        "verification_commands": verification_commands[:5],
+        "lookup": {
+            "lookup_mode": lookup.get("lookup_mode"),
+            "specialist_tool": lookup.get("specialist_tool"),
+            "summary": lookup.get("summary"),
+        },
+        "plan": {
+            "summary": plan.get("summary"),
+            "candidate_files": plan.get("candidate_files", []),
+            "likely_symbols": plan.get("likely_symbols", []),
+            "ordered_steps": plan.get("ordered_steps", []),
+        },
     }
 
 
@@ -305,8 +633,10 @@ def auto_iterate(path: str, goal: str | None = None, rounds: int = 2) -> dict:
 
     rounds = max(1, min(rounds, 5))
     goals_result = suggest_goals(path)
-    current_goal = goal.strip() if goal else f"Highest priority from this analysis:\n{goals_result['suggested_goals'][:800]}"
+    candidate_goals = list(goals_result.get("candidate_goals", []))
+    current_goal = goal.strip() if goal else (goals_result.get("top_goal") or (candidate_goals[0]["goal"] if candidate_goals else goals_result["suggested_goals"][:800]))
     iterations = []
+    used_goals: set[str] = set()
 
     for index in range(1, rounds + 1):
         step = best_question(current_goal, path=path)
@@ -318,37 +648,28 @@ def auto_iterate(path: str, goal: str | None = None, rounds: int = 2) -> dict:
                 "answer": step["answer"],
                 "relevant_symbols": step["relevant_symbols"],
                 "relevant_files": step["relevant_files"],
+                "recommended_next_action": step.get("recommended_next_action"),
+                "verification_commands": step.get("verification_commands", []),
             }
         )
+        used_goals.add(current_goal)
 
         if index == rounds:
             break
 
-        follow_up_prompt = (
-            "You are iterating on a codebase investigation.\n"
-            "Given the original code analysis, the current goal, and the answer we just learned,\n"
-            "what is the single best NEXT goal to investigate?\n"
-            "Return one concise sentence only.\n\n"
-            f"Code analysis:\n{goals_result['suggested_goals'][:1200]}\n\n"
-            f"Current goal:\n{current_goal}\n\n"
-            f"Current answer:\n{step['answer'][:1500]}"
+        next_goal = next(
+            (candidate["goal"] for candidate in candidate_goals if candidate.get("goal") and candidate["goal"] not in used_goals),
+            None,
         )
-
-        chat_model, api_base = _embedder_settings()
-        resp = _litellm().completion(
-            model=chat_model,
-            messages=[{"role": "user", "content": follow_up_prompt}],
-            api_base=api_base,
-            max_tokens=120,
-        )
-        next_goal = resp.choices[0].message.content.strip()
-        if not next_goal or next_goal == current_goal:
+        if not next_goal:
             break
         current_goal = next_goal
 
     return {
         "path": path,
         "initial_analysis": goals_result["analysis"],
+        "top_goal": goals_result.get("top_goal"),
+        "candidate_goals": candidate_goals,
         "suggested_goals": goals_result["suggested_goals"],
         "iterations": iterations,
         "rounds_completed": len(iterations),

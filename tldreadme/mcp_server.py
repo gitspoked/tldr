@@ -121,10 +121,10 @@ TOOL_METADATA = {
     "discover": _tool_meta(category="discovery", priority="advanced", read_only=True, latency="medium", backends=["rg", "vector"], profiles=["full"], fallback_to=["search_context"]),
     "explain": _tool_meta(category="synthesis", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph", "vector"], profiles=["full"], fallback_to=["know", "impact"]),
     "tldr": _tool_meta(category="generation", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph", "vector"], profiles=["full"], fallback_to=[]),
-    "suggest_goals": _tool_meta(category="generation", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph"], profiles=["full"], fallback_to=[]),
-    "best_question": _tool_meta(category="generation", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph"], profiles=["full"], fallback_to=[]),
-    "goal_flow": _tool_meta(category="generation", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph"], profiles=["full"], fallback_to=[]),
-    "auto_iterate": _tool_meta(category="generation", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph"], profiles=["full"], fallback_to=[]),
+    "suggest_goals": _tool_meta(category="planning", priority="advanced", read_only=True, latency="fast", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["repo_next_action", "repo_lookup"]),
+    "best_question": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["repo_lookup", "change_plan"]),
+    "goal_flow": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["suggest_goals", "best_question"]),
+    "auto_iterate": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["goal_flow"]),
 }
 
 TOOL_REQUIRED_BACKENDS = {
@@ -141,10 +141,6 @@ TOOL_REQUIRED_BACKENDS = {
     "search_context": ["rg"],
     "diagnostics_here": ["lsp"],
     "tldr": ["graph", "llm"],
-    "suggest_goals": ["graph", "vector", "llm"],
-    "best_question": ["graph", "vector", "llm"],
-    "goal_flow": ["graph", "vector", "llm"],
-    "auto_iterate": ["graph", "vector", "llm"],
 }
 
 _CAPABILITY_CACHE: dict[str, object] = {"expires_at": 0.0, "value": None}
@@ -842,10 +838,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="suggest_goals",
                 description=(
-                    "BACKWARDS INFERENCE: Given the code, what should we work on next? "
-                    "Analyzes orphan functions, load-bearing symbols, TODOs, incomplete "
-                    "patterns, and synthesizes 3-5 prioritized goals with rationale. "
-                    "The code tells YOU what it needs."
+                    "Grounded planning suggestions from current repo state. Prefers active "
+                    "plans first, then concrete feature gaps already visible in the code, "
+                    "workboard, and docs. Use this for next-feature ideation without "
+                    "generic maintenance drift."
                 ),
                 inputSchema={
                     "type": "object",
@@ -858,10 +854,9 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="best_question",
                 description=(
-                    "BACKWARDS INFERENCE: Given a goal, what's the RIGHT question to ask? "
-                    "Looks at the relevant code and formulates the precise question a "
-                    "senior dev who already knows the codebase would ask — then answers it. "
-                    "Returns: the question, the answer, and the relevant code segments."
+                    "Turn a goal into the next grounded engineering question. Uses "
+                    "repo_lookup and change_plan signals to identify the first file, "
+                    "symbol, risks, and verification commands that matter."
                 ),
                 inputSchema={
                     "type": "object",
@@ -875,11 +870,9 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="goal_flow",
                 description=(
-                    "FULL BACKWARDS CHAIN: Code → Goals → Best Question → Answer. "
-                    "Analyzes a module, suggests goals, picks the highest-impact one, "
-                    "formulates the right question, answers it with code context. "
-                    "One call to go from 'I don't know what to do' to 'here's exactly "
-                    "what to do, why, and the code that matters.'"
+                    "Cold-start planning chain: grounded goal suggestions -> top goal -> "
+                    "best next engineering question. Use this when there is no active "
+                    "plan and you need a concrete first move."
                 ),
                 inputSchema={
                     "type": "object",
@@ -892,8 +885,9 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="auto_iterate",
                 description=(
-                    "Multi-step backwards flow. Repeats code analysis → best question → "
-                    "answer for a few rounds to surface follow-up work."
+                    "Run a few grounded planning rounds in sequence. Starts from the top "
+                    "ranked goal, then walks the next candidate goals without inventing "
+                    "new ones from thin context."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1745,13 +1739,16 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
         if name == "goal_flow":
             goals_result = _rag().suggest_goals(arguments["path"])
             suggested = goals_result["suggested_goals"]
+            top_goal = goals_result.get("top_goal") or f"Based on this analysis, the highest priority: {suggested[:500]}"
             flow_result = _rag().best_question(
-                goal=f"Based on this analysis, the highest priority: {suggested[:500]}",
+                goal=top_goal,
                 path=arguments.get("path"),
             )
             result = {
                 "path": arguments["path"],
                 "analysis": goals_result["analysis"],
+                "top_goal": top_goal,
+                "candidate_goals": goals_result.get("candidate_goals", []),
                 "suggested_goals": suggested,
                 "best_question": flow_result["best_question"],
                 "answer": flow_result["answer"],
