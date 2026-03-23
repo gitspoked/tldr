@@ -112,10 +112,10 @@ def test_capture_plan_input_writes_timestamped_drop_and_refreshes_digest(monkeyp
         root=tmp_path,
     )
 
-    assert (tmp_path / "TLDRPLANS.20260323-120000.md").exists()
-    assert (tmp_path / "TLDRPLANS.md").exists()
+    assert (tmp_path / ".tldr/roadmap/TLDRPLANS.20260323-120000.md").exists()
+    assert (tmp_path / ".tldr/roadmap/TLDRPLANS.md").exists()
     assert result["captures_count"] == 1
-    digest = (tmp_path / "TLDRPLANS.md").read_text(encoding="utf-8")
+    digest = (tmp_path / ".tldr/roadmap/TLDRPLANS.md").read_text(encoding="utf-8")
     assert "Grounded Next Goals" in digest
     assert "https://example.com/security" in digest
 
