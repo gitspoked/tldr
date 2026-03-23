@@ -19,6 +19,7 @@ build/
 *.swo
 .DS_Store
 .pytest_cache/
+.claude/
 
 # Data — bulky local state lives under .tldr/, except tracked workboard plans
 .tldr/*
