@@ -9,6 +9,7 @@ from typing import Optional
 from .hot_index import HotIndex
 from .search import rg_search, rg_files, rg_count, format_hits_for_llm
 from . import rag
+from .lsp import semantic_inspect_symbol
 
 
 def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> dict:
@@ -60,6 +61,19 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
         result["used_in"] = usage_files[:15]
         result["usage_count"] = len(usage_files)
 
+        try:
+            semantic = semantic_inspect_symbol(search_name, hits[0].file, hits[0].line, root=root)
+        except Exception:
+            semantic = None
+        if semantic:
+            result["semantic"] = {
+                "hover": semantic.get("hover"),
+                "definitions": semantic.get("definitions", []),
+                "references": semantic.get("references", [])[:20],
+                "document_symbols": semantic.get("document_symbols", [])[:20],
+                "server_command": semantic.get("server_command", []),
+            }
+
     # Step 3: Graph (if available — callers/callees)
     try:
         callers = rag.read_symbol(name)
@@ -84,6 +98,21 @@ def impact(name: str, root: str = ".") -> dict:
     counts = rg_count(search_name, [root])
     total_references = sum(counts.values())
     files_affected = list(counts.keys())
+    reference_source = "rg"
+
+    definition_hits = rg_search(
+        f"(fn |struct |class |def |interface |enum |trait |pub |async ){search_name}",
+        [root], context=0, max_results=1,
+    )
+    if definition_hits:
+        try:
+            semantic = semantic_inspect_symbol(search_name, definition_hits[0].file, definition_hits[0].line, root=root)
+        except Exception:
+            semantic = None
+        if semantic and semantic.get("references"):
+            files_affected = sorted({ref["path"] for ref in semantic["references"] if ref.get("path")})
+            total_references = len(semantic["references"])
+            reference_source = "lsp"
 
     # Step 2: Graph-based transitive dependents
     dependents = []
@@ -112,6 +141,7 @@ def impact(name: str, root: str = ".") -> dict:
         "name": name,
         "severity": severity,
         "warning": warning,
+        "reference_source": reference_source,
         "total_references": total_references,
         "files_affected": files_affected[:20],
         "transitive_dependents": dependents[:20],
@@ -173,7 +203,7 @@ def explain(name: str, root: str = ".", hot_index: Optional[HotIndex] = None) ->
     how it works, what depends on it, what's similar, and what
     you should be careful about when modifying it.
 
-    This is the chain that makes Claude truly KNOW a symbol.
+    The full chain — use when you need deep understanding before a major change.
     """
     # Gather all intelligence
     knowledge = know(name, hot_index=hot_index, root=root)

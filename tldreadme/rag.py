@@ -1,11 +1,22 @@
 """RAG engine — retrieve from Qdrant + FalkorDB, synthesize via LiteLLM."""
 
-import litellm
-import os
 import subprocess
 from ._shared import get_embedder, get_grapher
+from .lazy import load_module
 
-from .embedder import _api_base, CHAT_MODEL
+
+def _litellm():
+    """Load litellm only when an LLM-backed step is needed."""
+
+    return load_module("litellm")
+
+
+def _embedder_settings() -> tuple[str, str]:
+    """Load chat model settings lazily from the embedder module."""
+
+    from .embedder import CHAT_MODEL, _api_base
+
+    return CHAT_MODEL, _api_base()
 
 
 def ask_question(question: str, scope: str | None = None) -> str:
@@ -117,10 +128,11 @@ def tldr(path: str) -> str:
         f"{context}"
     )
 
-    resp = litellm.completion(
-        model=CHAT_MODEL,
+    chat_model, api_base = _embedder_settings()
+    resp = _litellm().completion(
+        model=chat_model,
         messages=[{"role": "user", "content": prompt}],
-        api_base=_api_base(),
+        api_base=api_base,
         max_tokens=1000,
     )
     return resp.choices[0].message.content
@@ -190,10 +202,11 @@ def suggest_goals(path: str) -> dict:
         f"{context}"
     )
 
-    resp = litellm.completion(
-        model=CHAT_MODEL,
+    chat_model, api_base = _embedder_settings()
+    resp = _litellm().completion(
+        model=chat_model,
         messages=[{"role": "user", "content": prompt}],
-        api_base=_api_base(),
+        api_base=api_base,
         max_tokens=1500,
     )
 
@@ -261,10 +274,11 @@ def best_question(goal: str, path: str | None = None) -> dict:
         f"{context}"
     )
 
-    question_resp = litellm.completion(
-        model=CHAT_MODEL,
+    chat_model, api_base = _embedder_settings()
+    question_resp = _litellm().completion(
+        model=chat_model,
         messages=[{"role": "user", "content": question_prompt}],
-        api_base=_api_base(),
+        api_base=api_base,
         max_tokens=200,
     )
     the_question = question_resp.choices[0].message.content.strip()
@@ -279,6 +293,65 @@ def best_question(goal: str, path: str | None = None) -> dict:
         "answer": answer,
         "relevant_symbols": [g["symbol"] for g in graph_ctx],
         "relevant_files": list(set(g["file"] for g in graph_ctx)),
+    }
+
+
+def auto_iterate(path: str, goal: str | None = None, rounds: int = 2) -> dict:
+    """Repeat the backwards-flow loop for a few rounds.
+
+    Uses the codebase analysis to seed the first goal, then asks the model for
+    the next highest-value follow-up goal after each answer.
+    """
+
+    rounds = max(1, min(rounds, 5))
+    goals_result = suggest_goals(path)
+    current_goal = goal.strip() if goal else f"Highest priority from this analysis:\n{goals_result['suggested_goals'][:800]}"
+    iterations = []
+
+    for index in range(1, rounds + 1):
+        step = best_question(current_goal, path=path)
+        iterations.append(
+            {
+                "round": index,
+                "goal": current_goal,
+                "best_question": step["best_question"],
+                "answer": step["answer"],
+                "relevant_symbols": step["relevant_symbols"],
+                "relevant_files": step["relevant_files"],
+            }
+        )
+
+        if index == rounds:
+            break
+
+        follow_up_prompt = (
+            "You are iterating on a codebase investigation.\n"
+            "Given the original code analysis, the current goal, and the answer we just learned,\n"
+            "what is the single best NEXT goal to investigate?\n"
+            "Return one concise sentence only.\n\n"
+            f"Code analysis:\n{goals_result['suggested_goals'][:1200]}\n\n"
+            f"Current goal:\n{current_goal}\n\n"
+            f"Current answer:\n{step['answer'][:1500]}"
+        )
+
+        chat_model, api_base = _embedder_settings()
+        resp = _litellm().completion(
+            model=chat_model,
+            messages=[{"role": "user", "content": follow_up_prompt}],
+            api_base=api_base,
+            max_tokens=120,
+        )
+        next_goal = resp.choices[0].message.content.strip()
+        if not next_goal or next_goal == current_goal:
+            break
+        current_goal = next_goal
+
+    return {
+        "path": path,
+        "initial_analysis": goals_result["analysis"],
+        "suggested_goals": goals_result["suggested_goals"],
+        "iterations": iterations,
+        "rounds_completed": len(iterations),
     }
 
 
@@ -397,10 +470,11 @@ def _synthesize(question: str, context: str) -> str:
         f"## Question\n\n{question}"
     )
 
-    resp = litellm.completion(
-        model=CHAT_MODEL,
+    chat_model, api_base = _embedder_settings()
+    resp = _litellm().completion(
+        model=chat_model,
         messages=[{"role": "user", "content": prompt}],
-        api_base=_api_base(),
+        api_base=api_base,
         max_tokens=2000,
     )
     return resp.choices[0].message.content
