@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.request import urlopen
 import shlex
 import subprocess
 import sys
@@ -13,11 +14,13 @@ from .runtime import audit_tool_checks
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info", "unknown")
 CATEGORY_SCANNERS = {
-    "deps": ("osv-scanner", "pip-audit"),
-    "code": ("semgrep", "bandit"),
+    "deps": ("osv-scanner", "pip-audit", "snyk-oss"),
+    "code": ("semgrep", "bandit", "snyk-code"),
     "secrets": ("gitleaks",),
     "llm": ("garak",),
 }
+DEFAULT_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+DEFAULT_KEV_PATH = ".tldr/security/known_exploited_vulnerabilities.json"
 POLICY_PROFILES = {
     "owasp-web": {
         "name": "OWASP Top 10",
@@ -66,6 +69,8 @@ TOOL_DISPLAY_NAMES = {
     "semgrep": "Semgrep",
     "bandit": "Bandit",
     "gitleaks": "Gitleaks",
+    "snyk-oss": "Snyk Open Source",
+    "snyk-code": "Snyk Code",
     "garak": "Garak",
 }
 
@@ -181,6 +186,18 @@ def _check_payload(tool_id: str, checks_by_id: dict[str, dict[str, object]]) -> 
         "details": f"{TOOL_DISPLAY_NAMES.get(tool_id, tool_id)} availability was not reported.",
         "install_options": [],
     }
+
+
+def _category_order(category: str, *, prefer_snyk: bool) -> tuple[str, ...]:
+    """Return the scanner preference order for a category."""
+
+    scanners = list(CATEGORY_SCANNERS[category])
+    if prefer_snyk:
+        snyk_tool = "snyk-oss" if category == "deps" else "snyk-code" if category == "code" else None
+        if snyk_tool and snyk_tool in scanners:
+            scanners.remove(snyk_tool)
+            scanners.insert(0, snyk_tool)
+    return tuple(scanners)
 
 
 def _shell_join(command: list[str]) -> str:
@@ -458,6 +475,61 @@ def _run_pip_audit(root: Path, *, dry_run: bool, install_options: list[dict[str,
     )
 
 
+def _parse_snyk_oss(payload: object) -> list[dict[str, object]]:
+    """Normalize Snyk Open Source JSON results."""
+
+    findings: list[dict[str, object]] = []
+    if not isinstance(payload, dict):
+        return findings
+
+    for vulnerability in payload.get("vulnerabilities", []):
+        findings.append(
+            {
+                "id": vulnerability.get("id") or vulnerability.get("identifiers", {}).get("CVE", [None])[0],
+                "title": vulnerability.get("title") or vulnerability.get("id") or "Snyk vulnerability",
+                "severity": vulnerability.get("severity") or "unknown",
+                "package": vulnerability.get("packageName"),
+                "version": vulnerability.get("version"),
+                "path": " > ".join(vulnerability.get("from", []) or []),
+                "aliases": vulnerability.get("identifiers", {}).get("CVE", []),
+            }
+        )
+    return findings
+
+
+def _parse_snyk_code(payload: object) -> list[dict[str, object]]:
+    """Normalize Snyk Code JSON results."""
+
+    findings: list[dict[str, object]] = []
+    if not isinstance(payload, dict):
+        return findings
+
+    for run in payload.get("runs", []):
+        results = run.get("results", [])
+        rules = {rule.get("id"): rule for rule in run.get("tool", {}).get("driver", {}).get("rules", [])}
+        for result in results:
+            rule = rules.get(result.get("ruleId"), {})
+            locations = result.get("locations", [])
+            path = None
+            line = None
+            if locations:
+                physical = locations[0].get("physicalLocation", {})
+                artifact = physical.get("artifactLocation", {})
+                region = physical.get("region", {})
+                path = artifact.get("uri")
+                line = region.get("startLine")
+            findings.append(
+                {
+                    "id": result.get("ruleId"),
+                    "title": rule.get("name") or result.get("message", {}).get("text") or result.get("ruleId") or "Snyk Code finding",
+                    "severity": (rule.get("properties", {}) or {}).get("severity") or "unknown",
+                    "path": path,
+                    "line": line,
+                }
+            )
+    return findings
+
+
 def _run_semgrep(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
     return _run_json_command(
         "Semgrep",
@@ -528,6 +600,26 @@ def _run_gitleaks(root: Path, *, dry_run: bool, install_options: list[dict[str, 
         )
 
 
+def _run_snyk_oss(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+    return _run_json_command(
+        "Snyk Open Source",
+        ["snyk", "test", "--json", str(root)],
+        _parse_snyk_oss,
+        dry_run=dry_run,
+        install_options=install_options,
+    )
+
+
+def _run_snyk_code(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+    return _run_json_command(
+        "Snyk Code",
+        ["snyk", "code", "test", "--json", str(root)],
+        _parse_snyk_code,
+        dry_run=dry_run,
+        install_options=install_options,
+    )
+
+
 def _run_garak(
     root: Path,
     *,
@@ -594,8 +686,51 @@ RUNNERS = {
     "semgrep": _run_semgrep,
     "bandit": _run_bandit,
     "gitleaks": _run_gitleaks,
+    "snyk-oss": _run_snyk_oss,
+    "snyk-code": _run_snyk_code,
     "garak": _run_garak,
 }
+
+
+def list_policy_profiles() -> list[dict[str, object]]:
+    """Return all supported audit policy profiles."""
+
+    return [_profile_metadata(profile_id) for profile_id in POLICY_PROFILES]
+
+
+def render_policy_profiles() -> str:
+    """Render the supported audit policy profiles."""
+
+    lines = ["Audit Profiles:"]
+    for profile in list_policy_profiles():
+        lines.append(f"{profile['id']}: {profile['description']}")
+        lines.append(f"  Categories: {', '.join(profile['recommended_categories'])}")
+        lines.append(f"  Focus: {', '.join(profile['focus_areas'])}")
+    return "\n".join(lines)
+
+
+def refresh_kev_catalog(
+    *,
+    output_path: str = DEFAULT_KEV_PATH,
+    url: str = DEFAULT_KEV_URL,
+) -> dict[str, object]:
+    """Download and cache the CISA Known Exploited Vulnerabilities catalog."""
+
+    target = Path(output_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with urlopen(url, timeout=30) as response:  # nosec B310 - explicit official feed URL/config
+        payload = response.read().decode("utf-8")
+
+    parsed = _parse_json(payload)
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("vulnerabilities"), list):
+        raise RuntimeError(f"Downloaded KEV payload from {url} was not valid JSON.")
+
+    target.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+    return {
+        "url": url,
+        "path": str(target),
+        "count": len(parsed.get("vulnerabilities", [])),
+    }
 
 
 def _missing_checks_next_action(checks: list[dict[str, object]]) -> str:
@@ -647,6 +782,7 @@ def run_audit(
     download_offline_db: bool = False,
     kev_catalog_path: str | None = None,
     profile: str | None = None,
+    prefer_snyk: bool = False,
 ) -> dict[str, object]:
     """Run one audit category or the full audit suite."""
 
@@ -664,6 +800,7 @@ def run_audit(
                 download_offline_db=download_offline_db,
                 kev_catalog_path=kev_catalog_path,
                 profile=profile,
+                prefer_snyk=prefer_snyk,
             )
             for name in CATEGORY_SCANNERS
         ]
@@ -700,15 +837,16 @@ def run_audit(
     checks = audit_tool_checks((category,))
     checks_by_id = {str(check.get("tool_id")): check for check in checks}
     selected_tool_id = None
+    scanner_order = _category_order(category, prefer_snyk=prefer_snyk)
     if category != "llm" or garak_config:
-        for tool_id in CATEGORY_SCANNERS[category]:
+        for tool_id in scanner_order:
             check = checks_by_id.get(tool_id)
             if check and check.get("status") == "ok":
                 selected_tool_id = tool_id
                 break
 
     scanners: list[dict[str, object]] = []
-    for tool_id in CATEGORY_SCANNERS[category]:
+    for tool_id in scanner_order:
         check = _check_payload(tool_id, checks_by_id)
         install_options = list(check.get("install_options", []))
         if selected_tool_id == tool_id:
@@ -793,6 +931,8 @@ def run_audit(
         )
     if offline and selected_tool_id != "osv-scanner" and category == "deps":
         recommended_next_action = "Offline dependency mode requires OSV-Scanner; install it and rerun `tldr audit deps --offline`."
+    if prefer_snyk and selected_tool_id not in {"snyk-oss", "snyk-code"} and category in {"deps", "code"}:
+        recommended_next_action = "Snyk preference is enabled, but the Snyk CLI is unavailable; install and authenticate `snyk`, or rerun without `--prefer-snyk`."
 
     missing_required_scanner = category != "llm" and selected_tool_id is None
     status = _category_status(scanners)
@@ -810,6 +950,7 @@ def run_audit(
         "checks": checks,
         "scanners": scanners,
         "policy_profile": policy_profile,
+        "selected_scanner": selected_tool_id,
         "recommended_next_action": recommended_next_action,
         "verification_commands": [f"tldr audit {category}"],
     }

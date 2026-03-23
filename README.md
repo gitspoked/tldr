@@ -143,10 +143,14 @@ Suggested human flow:
 .venv/bin/tldr audit all . --dry-run
 .venv/bin/tldr audit deps . --offline
 .venv/bin/tldr audit deps . --kev-catalog .tldr/security/kev.json
+.venv/bin/tldr audit deps . --prefer-snyk
 .venv/bin/tldr audit deps .
 .venv/bin/tldr audit code .
+.venv/bin/tldr audit code . --prefer-snyk
 .venv/bin/tldr audit secrets .
 .venv/bin/tldr audit code . --profile owasp-mcp
+.venv/bin/tldr audit profiles
+.venv/bin/tldr audit kev-refresh --output .tldr/security/known_exploited_vulnerabilities.json
 .venv/bin/tldr audit llm . --garak-config .tldr/garak.yml
 ```
 
@@ -166,11 +170,15 @@ Security extensions built into the current audit flow:
 - `--offline` and `--download-offline-db` on dependency scans prefer OSV-Scanner's local database path instead of assuming network access
 - `--kev-catalog PATH` annotates dependency findings with CISA Known Exploited Vulnerability priority when a local KEV JSON catalog is present
 - `--profile owasp-web|owasp-api|owasp-llm|owasp-mcp` adds policy-oriented follow-up guidance without pretending OWASP is a vulnerability feed
+- `--prefer-snyk` lets authenticated Snyk become the deps/code scanner without changing the local-first default
+- `tldr audit kev-refresh` caches the official CISA KEV catalog under `.tldr/security/`
+- `tldr audit profiles` shows the current OWASP-oriented profile set and the categories each one emphasizes
 
 What to use when:
 - NVD and OSV: vulnerability truth and dependency correlation
 - CISA KEV: exploit-in-the-wild prioritization
 - OWASP profiles: secure-coding and review emphasis for the current repo surface
+- Snyk: optional authenticated second layer for SaaS-backed dependency and code scanning
 
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 

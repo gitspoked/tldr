@@ -60,6 +60,8 @@ def test_cli_audit_help():
     assert "secrets" in result.output
     assert "llm" in result.output
     assert "all" in result.output
+    assert "profiles" in result.output
+    assert "kev-refresh" in result.output
 
 
 def test_cli_audit_deps_help():
@@ -70,6 +72,7 @@ def test_cli_audit_deps_help():
     assert "--download-offline-db" in result.output
     assert "--kev-catalog" in result.output
     assert "--profile" in result.output
+    assert "--prefer-snyk" in result.output
 
 
 def test_cli_lsp_help():
@@ -148,6 +151,41 @@ def test_cli_audit_json_output(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert '"category": "deps"' in result.output
+
+
+def test_cli_audit_profiles(monkeypatch):
+    monkeypatch.setattr(
+        "tldreadme.audit.list_policy_profiles",
+        lambda: [{"id": "owasp-mcp", "description": "profile", "recommended_categories": ["code"], "focus_areas": ["tools"]}],
+    )
+    monkeypatch.setattr(
+        "tldreadme.audit.render_policy_profiles",
+        lambda: "Audit Profiles:\nowasp-mcp: profile",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["audit", "profiles"])
+
+    assert result.exit_code == 0
+    assert "owasp-mcp" in result.output
+
+
+def test_cli_audit_kev_refresh(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.audit.refresh_kev_catalog",
+        lambda **_kwargs: {
+            "path": str(tmp_path / "kev.json"),
+            "count": 42,
+            "url": "https://example.com/kev.json",
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["audit", "kev-refresh", "--output", str(tmp_path / "kev.json")])
+
+    assert result.exit_code == 0
+    assert "Wrote KEV catalog:" in result.output
+    assert "Entries: 42" in result.output
 
 
 def test_cli_doctor_runs():

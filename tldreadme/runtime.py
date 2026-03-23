@@ -71,6 +71,20 @@ AUDIT_TOOL_SPECS = (
         "categories": ("secrets",),
     },
     {
+        "id": "snyk-oss",
+        "name": "Snyk Open Source",
+        "kind": "binary",
+        "binary": "snyk",
+        "categories": ("deps",),
+    },
+    {
+        "id": "snyk-code",
+        "name": "Snyk Code",
+        "kind": "binary",
+        "binary": "snyk",
+        "categories": ("code",),
+    },
+    {
         "id": "garak",
         "name": "Garak",
         "kind": "python",
@@ -271,6 +285,14 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
         if name == "Gitleaks":
             if brew and is_macos:
                 options.append(_install_option("Install Gitleaks with Homebrew", "brew install gitleaks"))
+            return _dedupe_options(options)
+
+        if name in {"Snyk Open Source", "Snyk Code"}:
+            if brew and is_macos:
+                options.append(_install_option("Install the Snyk CLI with Homebrew", "brew tap snyk/tap && brew install snyk-cli"))
+            if npm:
+                options.append(_install_option("Install the Snyk CLI with npm", "npm install -g snyk"))
+            options.append(_install_option("Authenticate the Snyk CLI", "snyk auth"))
             return _dedupe_options(options)
 
         if name == "Garak":
