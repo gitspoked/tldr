@@ -19,6 +19,8 @@ LEGACY_SESSION = "current.yaml"
 CURRENT_SESSION_PREFIX = "current."
 CURRENT_SESSION_SUFFIX = ".yaml"
 SCHEMA_VERSION = 1
+PLAN_DOCUMENT_TYPE = "tldreadme/plan"
+SESSION_DOCUMENT_TYPE = "tldreadme/session"
 
 PlanStatus = Literal["pending", "in_progress", "blocked", "done", "archived"]
 TaskStatus = Literal["pending", "in_progress", "blocked", "done"]
@@ -67,6 +69,7 @@ class PlanRecord(BaseModel):
     """A durable plan containing phased tasks."""
 
     schema_version: int = SCHEMA_VERSION
+    document_type: str = PLAN_DOCUMENT_TYPE
     id: str
     title: str
     status: PlanStatus = "pending"
@@ -86,6 +89,7 @@ class SessionState(BaseModel):
     """Local session scratch state for resuming work."""
 
     schema_version: int = SCHEMA_VERSION
+    document_type: str = SESSION_DOCUMENT_TYPE
     session_id: str
     actor_id: str
     workspace_id: str
@@ -186,6 +190,34 @@ def _load_yaml(path: Path) -> dict:
     return data
 
 
+def _normalize_plan_payload(data: dict) -> tuple[dict, bool]:
+    """Backfill plan metadata for older files."""
+
+    changed = False
+    payload = dict(data)
+    if payload.get("schema_version") is None:
+        payload["schema_version"] = SCHEMA_VERSION
+        changed = True
+    if not payload.get("document_type"):
+        payload["document_type"] = PLAN_DOCUMENT_TYPE
+        changed = True
+    return payload, changed
+
+
+def _normalize_session_payload(data: dict) -> tuple[dict, bool]:
+    """Backfill session metadata for older canonical session files."""
+
+    changed = False
+    payload = dict(data)
+    if payload.get("schema_version") is None:
+        payload["schema_version"] = SCHEMA_VERSION
+        changed = True
+    if not payload.get("document_type"):
+        payload["document_type"] = SESSION_DOCUMENT_TYPE
+        changed = True
+    return payload, changed
+
+
 def _dump_yaml(path: Path, payload: dict) -> None:
     """Write a YAML file with stable formatting."""
 
@@ -197,7 +229,11 @@ def _load_plan(plan_id: str, root: str | Path | None = None) -> PlanRecord:
     path = _plan_file(plan_id, root)
     if not path.exists():
         raise RuntimeError(f"Unknown plan `{plan_id}`.")
-    return PlanRecord.model_validate(_load_yaml(path))
+    payload, changed = _normalize_plan_payload(_load_yaml(path))
+    plan = PlanRecord.model_validate(payload)
+    if changed:
+        _save_plan(plan, root)
+    return plan
 
 
 def _save_plan(plan: PlanRecord, root: str | Path | None = None) -> None:
@@ -367,9 +403,13 @@ def _load_session_path(path: Path, root: str | Path | None = None, *, actor_id: 
         _save_session(session, root)
         return session
 
-    session = SessionState.model_validate(data)
+    payload, changed = _normalize_session_payload(data)
+    session = SessionState.model_validate(payload)
     if not session.started_at:
         session.started_at = session.updated_at
+        changed = True
+    if changed:
+        _save_session(session, root)
     return session
 
 

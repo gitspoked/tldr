@@ -6,6 +6,24 @@ from tldreadme import coding_tools
 from tldreadme.asts import ParseResult, Symbol
 
 
+def test_router_contract_surface_is_frozen():
+    assert coding_tools.ROUTER_TOP_LEVEL_SEQUENCE == (
+        "repo_next_action",
+        "repo_lookup",
+        "change_plan",
+        "verify_change",
+    )
+    assert coding_tools.PREFERRED_RESULT_KEYS == (
+        "tool_contract_version",
+        "summary",
+        "confidence",
+        "evidence",
+        "recommended_next_action",
+        "verification_commands",
+        "fallback_used",
+    )
+
+
 def test_test_map_finds_targeted_python_tests(tmp_path):
     root = tmp_path
     source = root / "src" / "service.py"
@@ -646,3 +664,57 @@ def test_repo_next_action_prioritizes_unknown_child_when_no_overlap(monkeypatch,
     assert result["suggested_tool"] == "repo_lookup"
     assert result["suggested_arguments"]["path"] == "redocoder"
     assert result["unknown_children"][0]["path"] == "redocoder"
+
+
+def test_top_level_router_tools_return_normalized_contract(monkeypatch, tmp_path):
+    root = tmp_path
+    required = set(coding_tools.PREFERRED_RESULT_KEYS) | {"next_best_tool"}
+
+    monkeypatch.setattr(coding_tools, "_workboard_snapshot", lambda _root: None)
+    monkeypatch.setattr(coding_tools, "_children_snapshot", lambda _root: {"children": []})
+    monkeypatch.setattr(coding_tools, "_recent_summary", lambda *_args, **_kwargs: None)
+    repo_next = coding_tools.repo_next_action(root=str(root))
+
+    monkeypatch.setattr(
+        coding_tools,
+        "search_context",
+        lambda *_args, **_kwargs: {
+            "tool_contract_version": coding_tools.ROUTER_CONTRACT_VERSION,
+            "summary": "Found 1 ranked context hit.",
+            "confidence": 0.8,
+            "evidence": ["code: app.py:1"],
+            "recommended_next_action": "Inspect the matching file.",
+            "verification_commands": ["python -m pytest -q"],
+            "fallback_used": [],
+            "next_best_tool": "edit_context",
+        },
+    )
+    repo_lookup = coding_tools.repo_lookup(query="app", root=str(root))
+
+    monkeypatch.setattr(
+        coding_tools,
+        "_discover_for_goal",
+        lambda *_args, **_kwargs: {"merged": []},
+    )
+    monkeypatch.setattr(coding_tools, "_impact_for_symbol", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(coding_tools, "_current_work_context", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        coding_tools,
+        "test_map",
+        lambda **_kwargs: {
+            "test_files": [],
+            "verification_commands": ["python -m pytest -q"],
+        },
+    )
+    change_plan = coding_tools.change_plan("Investigate router contract", root=str(root))
+
+    monkeypatch.setattr(
+        coding_tools,
+        "_find_task_context",
+        lambda *_args, **_kwargs: None,
+    )
+    verify_change = coding_tools.verify_change(files=["app.py"], root=str(root), run_commands=False)
+
+    for payload in [repo_next, repo_lookup, change_plan, verify_change]:
+        assert required <= set(payload)
+        assert payload["tool_contract_version"] == coding_tools.ROUTER_CONTRACT_VERSION

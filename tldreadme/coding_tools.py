@@ -8,6 +8,17 @@ from .parser import LANG_MAP, parse_file, scan_context_docs
 from .search import rg_files, rg_search
 
 IGNORED_SCAN_PARTS = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build"}
+ROUTER_CONTRACT_VERSION = 1
+PREFERRED_RESULT_KEYS = (
+    "tool_contract_version",
+    "summary",
+    "confidence",
+    "evidence",
+    "recommended_next_action",
+    "verification_commands",
+    "fallback_used",
+)
+ROUTER_TOP_LEVEL_SEQUENCE = ("repo_next_action", "repo_lookup", "change_plan", "verify_change")
 LOOKUP_IMPACT_HINTS = (
     "impact",
     "break",
@@ -30,7 +41,7 @@ LOOKUP_IMPACT_HINTS = (
     "references",
     "refactor risk",
 )
-ROUTER_TOP_LEVEL_TOOLS = {"repo_next_action", "repo_lookup", "change_plan", "verify_change"}
+ROUTER_TOP_LEVEL_TOOLS = set(ROUTER_TOP_LEVEL_SEQUENCE)
 
 
 def _repo_root(root: str | None = None) -> Path:
@@ -80,6 +91,7 @@ def _preferred_result(
 
     payload.update(
         {
+            "tool_contract_version": ROUTER_CONTRACT_VERSION,
             "summary": summary,
             "confidence": round(max(0.0, min(confidence, 1.0)), 2),
             "evidence": _dedupe([item for item in (evidence or []) if item]),
