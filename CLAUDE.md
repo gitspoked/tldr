@@ -58,8 +58,8 @@ Source files
 - **chains.py** — Composed tool sequences: `know` (80% tool: hot_index -> rg -> graph), `impact` (15%: rg counts -> graph dependents -> severity), `discover` (5%: rg + semantic merge), `explain` (everything: know -> impact -> discover -> LLM synthesis).
 - **search.py** — ripgrep subprocess wrapper. `rg_search` (matches with context), `rg_files` (file list), `rg_count` (per-file counts). All skip node_modules/target/dist/.git.
 - **hot_index.py** — Pre-caches top 100 symbols ranked by importance heuristic (size, kind, visibility). Persists to `.tldr/hot_index.json`.
-- **rag.py** — RAG engine combining Qdrant retrieval + FalkorDB graph context + LiteLLM synthesis. Also implements backwards flow: `suggest_goals`, `best_question`.
-- **mcp_server.py** — Registers 16 MCP tools, routes calls to chains.py and rag.py. Runs as stdio server (not HTTP).
+- **rag.py** — RAG engine combining Qdrant retrieval + FalkorDB graph context + LiteLLM synthesis. Also implements grounded planning helpers: `suggest_goals`, `best_question`, `goal_flow`, and `auto_iterate`.
+- **mcp_server.py** — Registers the MCP tool/resource/prompt surface, applies router/full profiles, and capability-filters tools at runtime. Supports stdio and SSE transports.
 - **watcher.py** — watchdog-based file observer with 2-second debounce. Re-parses changed files and updates both Qdrant and FalkorDB incrementally.
 
 ### Key Design Decisions

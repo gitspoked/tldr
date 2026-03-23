@@ -45,8 +45,8 @@
 # - Good default chain for humans and agents:
 #    - `repo_next_action` -> `goal_flow` -> `repo_lookup` -> `change_plan` -> `plan_create` -> `task_add`
 # - Caveat:
-#    - `suggest_goals` and `auto_iterate` are useful for brainstorming, but they can still drift into low-signal maintenance advice.
-#    - Treat them as idea generators; validate with `repo_lookup` and `change_plan` before coding.
+#    - `suggest_goals` and `auto_iterate` are now grounded in active plans, repo state, and visible feature gaps.
+#    - Still validate the chosen path with `repo_lookup` and `change_plan` before coding.
 #
 __BOF__
 # ⏺ Ha — context is contagious. You're right. Feed a well-structured TLDR.md with the right symbols, relationships, and patterns, and the quality of everything it produces goes up.
@@ -74,7 +74,6 @@ __EOF__ # MIT, enjoy  # # youtu.be/q0hyYWKXF0Q #~#
 # (c) 2026 Matt Klein last # # # # # # # # # # # #~#    
 # nm at ntele net might not # # # # # # # # # # # #~#
 # miss ur mail prolly tldr?# # # # # # # # # # # # #~#
-
 
 
 

@@ -81,6 +81,17 @@ def test_capability_enforcement_suppresses_lsp_tools():
     assert "scan_context" in full_tools
 
 
+def test_grounded_planning_tools_remain_available_without_llm():
+    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": False, "vector": False, "graph": False, "llm": False, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
+
+    full_tools = mcp_server._tool_names_for_profile("full", capabilities=capabilities)
+
+    assert "suggest_goals" in full_tools
+    assert "best_question" in full_tools
+    assert "goal_flow" in full_tools
+    assert "auto_iterate" in full_tools
+
+
 def test_tooling_payload_prioritizes_repo_next_action_when_overlap_exists(monkeypatch):
     capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": True, "vector": True, "graph": True, "llm": True, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
     monkeypatch.setattr(mcp_server, "_routing_signals", lambda: {"has_current_plan": True, "has_current_task": True, "has_next_action": True, "has_overlaps": True, "unknown_children": 0})
