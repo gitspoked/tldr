@@ -5,7 +5,20 @@ from pathlib import Path
 from tldreadme import coding_tools
 from tldreadme.asts import ParseResult, Symbol
 
+from .bedrock import bedrock_case
 
+
+@bedrock_case(
+    "router.contract.surface",
+    purpose="Freeze the router-default tool surface and normalized payload keys.",
+    use_case="A router inspects the default MCP surface and assumes only four bedrock tools exist.",
+    similar_use_cases=[
+        "tool discovery",
+        "router warm-up",
+        "future surface regression checks",
+    ],
+    reliance_percent=99.7,
+)
 def test_router_contract_surface_is_frozen():
     assert coding_tools.ROUTER_TOP_LEVEL_SEQUENCE == (
         "repo_next_action",
@@ -196,6 +209,17 @@ def test_change_plan_returns_candidate_files_risks_and_verification(monkeypatch,
     assert result["next_best_tool"] == "edit_context"
 
 
+@bedrock_case(
+    "router.lookup.edit_intent",
+    purpose="Preserve edit-time dispatch from repo_lookup into the file/line specialist path.",
+    use_case="An agent starts from a file position and expects repo_lookup to route directly to edit context.",
+    similar_use_cases=[
+        "cursor-local code inspection",
+        "position-based routing",
+        "line-number triage",
+    ],
+    reliance_percent=98.8,
+)
 def test_repo_lookup_dispatches_to_edit_context(monkeypatch, tmp_path):
     root = tmp_path
     source = root / "app.py"
@@ -227,6 +251,17 @@ def test_repo_lookup_dispatches_to_edit_context(monkeypatch, tmp_path):
     assert result["next_best_tool"] == "change_plan"
 
 
+@bedrock_case(
+    "router.lookup.impact_intent",
+    purpose="Preserve change-risk dispatch from repo_lookup into impact analysis.",
+    use_case="A router asks what breaks if a symbol changes and expects impact-first guidance.",
+    similar_use_cases=[
+        "safe refactor planning",
+        "blast-radius review",
+        "symbol-risk triage",
+    ],
+    reliance_percent=98.6,
+)
 def test_repo_lookup_dispatches_to_impact_for_change_risk_queries(monkeypatch, tmp_path):
     root = tmp_path
 
@@ -262,6 +297,17 @@ def test_repo_lookup_dispatches_to_impact_for_change_risk_queries(monkeypatch, t
     assert result["next_best_tool"] == "change_plan"
 
 
+@bedrock_case(
+    "router.lookup.search_intent",
+    purpose="Preserve query-based dispatch from repo_lookup into cross-surface context search.",
+    use_case="A router starts from a fuzzy query and expects repo_lookup to search context instead of forcing a symbol path.",
+    similar_use_cases=[
+        "bug-hunt orientation",
+        "intent-driven repo lookup",
+        "cross-surface search routing",
+    ],
+    reliance_percent=98.4,
+)
 def test_repo_lookup_dispatches_to_search_and_maps_specialist_follow_up(monkeypatch, tmp_path):
     root = tmp_path
 
@@ -666,6 +712,17 @@ def test_repo_next_action_prioritizes_unknown_child_when_no_overlap(monkeypatch,
     assert result["unknown_children"][0]["path"] == "redocoder"
 
 
+@bedrock_case(
+    "router.contract.payload",
+    purpose="Keep every top-level router tool on the same normalized result contract.",
+    use_case="A router chains top-level tools without re-learning a different payload shape per tool.",
+    similar_use_cases=[
+        "multi-step agent chaining",
+        "tool contract validation",
+        "router fallback handling",
+    ],
+    reliance_percent=99.5,
+)
 def test_top_level_router_tools_return_normalized_contract(monkeypatch, tmp_path):
     root = tmp_path
     required = set(coding_tools.PREFERRED_RESULT_KEYS) | {"next_best_tool"}

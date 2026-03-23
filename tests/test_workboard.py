@@ -5,6 +5,8 @@ import yaml
 
 from tldreadme import workboard
 
+from .bedrock import bedrock_case
+
 
 def test_create_plan_persists_yaml(tmp_path):
     root = tmp_path / "work"
@@ -161,6 +163,17 @@ def test_get_task_includes_plan_context(tmp_path):
     assert payload["title"] == "Inspect nested task payload"
 
 
+@bedrock_case(
+    "state.plan.metadata_upgrade",
+    purpose="Preserve backward-compatible loading and rewrite of older plan documents.",
+    use_case="A previously saved plan lacks schema metadata and must still load cleanly into the current bedrock format.",
+    similar_use_cases=[
+        "schema upgrades",
+        "plan document migration",
+        "cross-version session resume",
+    ],
+    reliance_percent=97.8,
+)
 def test_get_plan_upgrades_legacy_plan_metadata(tmp_path):
     root = tmp_path / "work"
     plans_dir = root / "plans"
@@ -197,6 +210,17 @@ def test_get_plan_upgrades_legacy_plan_metadata(tmp_path):
     assert rewritten["document_type"] == workboard.PLAN_DOCUMENT_TYPE
 
 
+@bedrock_case(
+    "state.session.metadata_upgrade",
+    purpose="Preserve backward-compatible loading and rewrite of canonical session snapshots.",
+    use_case="An interrupted or older session file is resumed later and must be upgraded in place without losing the current plan pointer.",
+    similar_use_cases=[
+        "session resume",
+        "multi-agent continuity",
+        "cross-version canonical session files",
+    ],
+    reliance_percent=99.1,
+)
 def test_current_plan_upgrades_legacy_session_metadata(tmp_path):
     root = tmp_path / "work"
     plan = workboard.create_plan("Legacy session", "Upgrade a canonical session file", root=root)

@@ -3,6 +3,8 @@
 from tldreadme import children
 import yaml
 
+from .bedrock import bedrock_case
+
 
 def test_list_children_detects_shallow_nested_project(tmp_path):
     child = tmp_path / "redocoder"
@@ -47,6 +49,17 @@ def test_merge_and_ignore_child_persist_registry(tmp_path):
     assert (tmp_path / ".tldr" / "work" / "children.yaml").exists()
 
 
+@bedrock_case(
+    "state.children.metadata_upgrade",
+    purpose="Preserve backward-compatible loading and rewrite of child-project registries.",
+    use_case="A repo with older child acknowledgments is reopened and must keep imported subtree decisions intact.",
+    similar_use_cases=[
+        "post-init imported subtree detection",
+        "child registry migration",
+        "nested project acknowledgments",
+    ],
+    reliance_percent=96.4,
+)
 def test_list_children_upgrades_legacy_registry_metadata(tmp_path):
     work_root = tmp_path / ".tldr" / "work"
     work_root.mkdir(parents=True)

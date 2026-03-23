@@ -118,6 +118,8 @@ For human-facing code health, add `--diagnostics path/to/file.py` to `tldr docto
 
 Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
 
+For bedrock contract checks, run `.venv/bin/python -m pytest -m bedrock -q`. The pytest summary prints a GO/NO-GO bedrock gate report with the covered use case, similar use cases, and reliance weight for each critical contract test.
+
 ### Start Infrastructure
 
 ```bash
