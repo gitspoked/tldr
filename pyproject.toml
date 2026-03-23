@@ -34,6 +34,9 @@ tldr = "tldreadme.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "bedrock: critical contract and compatibility tests that gate the bedrock layer",
+]
 filterwarnings = [
     "ignore:Language\\(path, name\\) is deprecated\\. Use Language\\(ptr, name\\) instead\\.:FutureWarning",
 ]

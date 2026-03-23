@@ -4,6 +4,8 @@ import json
 
 from tldreadme import mcp_server
 
+from .bedrock import bedrock_case
+
 
 def test_read_health_resource(monkeypatch):
     runtime = type("Runtime", (), {"runtime_report": staticmethod(lambda: {"ok": True, "checks": [{"name": "python", "status": "ok"}]})})()
@@ -15,6 +17,17 @@ def test_read_health_resource(monkeypatch):
     assert payload["checks"][0]["name"] == "python"
 
 
+@bedrock_case(
+    "mcp.router.profile",
+    purpose="Keep the default MCP exposure aligned with the four-tool router contract.",
+    use_case="A router introspects repo://tooling and relies on the exposed tool list matching the bedrock surface.",
+    similar_use_cases=[
+        "tool listing",
+        "capability-aware router boot",
+        "MCP profile introspection",
+    ],
+    reliance_percent=99.3,
+)
 def test_read_tooling_resource_uses_router_profile(monkeypatch):
     capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": True, "vector": False, "graph": False, "llm": False, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
     monkeypatch.setattr(mcp_server, "_routing_signals", lambda: {"has_current_plan": False, "has_current_task": False, "has_next_action": False, "has_overlaps": False, "unknown_children": 0})
@@ -46,6 +59,17 @@ def test_router_profile_exposes_smaller_tool_set():
     assert len(router_tools) < len(full_tools)
 
 
+@bedrock_case(
+    "mcp.capability.enforcement",
+    purpose="Keep hard backend requirements from leaking unsupported tools into the exposed surface.",
+    use_case="A router runs with partial capabilities and expects missing-backend tools to be suppressed rather than fail at call time.",
+    similar_use_cases=[
+        "degraded runtime startup",
+        "LSP-missing environments",
+        "capability-filtered routing",
+    ],
+    reliance_percent=98.9,
+)
 def test_capability_enforcement_suppresses_lsp_tools():
     capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": False, "vector": True, "graph": True, "llm": True, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
 
