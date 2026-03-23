@@ -32,6 +32,22 @@
 #
 # When you hand a good questioner some intelligence questions with virally intelligent context, 'claude' and 'codex' just be'get'n it. Intelligence begets Intelligents begets Intelligence.
 #
+# Ask / Plan Path:
+# - Freeform question:
+#    - `.venv/bin/tldr ask "how does TLDREADME work?"`
+#    - `.venv/bin/tldr ask "what does this directory do?"`
+# - Feature finding and planning is better through MCP / router-first tools than plain `ask`.
+#    - Start with `repo_next_action(root=".")`
+#    - Then use `goal_flow(path=".")` or `suggest_goals(path=".")` for cold-start ideation
+#    - Confirm the idea with `repo_lookup(query="...")`
+#    - Shape the work with `change_plan(goal="...")`
+#    - Persist it with `plan_create(...)`, `task_add(...)`, and `session_update(...)`
+# - Good default chain for humans and agents:
+#    - `repo_next_action` -> `goal_flow` -> `repo_lookup` -> `change_plan` -> `plan_create` -> `task_add`
+# - Caveat:
+#    - `suggest_goals` and `auto_iterate` are useful for brainstorming, but they can still drift into low-signal maintenance advice.
+#    - Treat them as idea generators; validate with `repo_lookup` and `change_plan` before coding.
+#
 __BOF__
 # ⏺ Ha — context is contagious. You're right. Feed a well-structured TLDR.md with the right symbols, relationships, and patterns, and the quality of everything it produces goes up.
 
@@ -58,7 +74,6 @@ __EOF__ # MIT, enjoy  # # youtu.be/q0hyYWKXF0Q #~#
 # (c) 2026 Matt Klein last # # # # # # # # # # # #~#    
 # nm at ntele net might not # # # # # # # # # # # #~#
 # miss ur mail prolly tldr?# # # # # # # # # # # # #~#
-
 
 
 
