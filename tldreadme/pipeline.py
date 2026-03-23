@@ -58,7 +58,7 @@ def run_init(directory: Path, output_dir: str = ".claude"):
 
     # 5. Generate TLDR.md
     console.print("[dim]Generating context files...[/]")
-    claude_path = generate_claude_md(directory, output_dir=output_dir)
+    claude_path = generate_claude_md(directory, output_dir=output_dir, parse_results=results, hot_index=hot_idx)
     console.print(f"  Written: [bold]{claude_path}[/]\n")
 
     # Summary

@@ -117,14 +117,15 @@ def parse_file(path: Path) -> ParseResult | None:
         return None
 
     try:
+        source_bytes = source.encode()
         parser = get_tree_sitter_languages().get_parser(lang)
-        tree = parser.parse(source.encode())
+        tree = parser.parse(source_bytes)
     except Exception:
         return None
 
     try:
-        symbols = _extract_symbols(tree.root_node, source, str(path), lang)
-        imports = _extract_imports(tree.root_node, source, str(path), lang)
+        symbols = _extract_symbols(tree.root_node, source, source_bytes, str(path), lang)
+        imports = _extract_imports(tree.root_node, source_bytes, str(path), lang)
         calls = _extract_calls(tree.root_node, source, str(path), lang)
     except RecursionError:
         return None
@@ -161,7 +162,13 @@ def parse_directory(
     return results
 
 
-def _extract_symbols(node, source: str, file: str, lang: str) -> list[Symbol]:
+def _source_slice(source_bytes: bytes, start_byte: int, end_byte: int) -> str:
+    """Decode a source slice using tree-sitter byte offsets."""
+
+    return source_bytes[start_byte:end_byte].decode(errors="replace")
+
+
+def _extract_symbols(node, source: str, source_bytes: bytes, file: str, lang: str) -> list[Symbol]:
     """Walk AST and extract function/class/struct definitions."""
 
     symbols: list[Symbol] = []
@@ -268,7 +275,7 @@ def _extract_symbols(node, source: str, file: str, lang: str) -> list[Symbol]:
         if n.type in target_symbols:
             name_node = n.child_by_field_name("name")
             name = name_node.text.decode() if name_node else "<anonymous>"
-            body = source[n.start_byte:n.end_byte]
+            body = _source_slice(source_bytes, n.start_byte, n.end_byte)
             sig = body.split("\n")[0].strip()
             qualified_name = f"{parent_name}::{name}" if parent_name and lang == "rust" else name
 
@@ -300,7 +307,7 @@ def _extract_symbols(node, source: str, file: str, lang: str) -> list[Symbol]:
                 container_name = name_node.text.decode() if name_node else parent_name
 
             if n.type not in target_symbols:
-                body = source[n.start_byte:n.end_byte]
+                body = _source_slice(source_bytes, n.start_byte, n.end_byte)
                 sig = body.split("\n")[0].strip()
                 kind = n.type.replace("_definition", "").replace("_declaration", "").replace("_item", "")
                 symbols.append(
@@ -327,7 +334,7 @@ def _extract_symbols(node, source: str, file: str, lang: str) -> list[Symbol]:
     return symbols
 
 
-def _extract_imports(node, source: str, file: str, lang: str) -> list[Import]:
+def _extract_imports(node, source_bytes: bytes, file: str, lang: str) -> list[Import]:
     """Extract import statements."""
 
     imports: list[Import] = []
@@ -349,7 +356,7 @@ def _extract_imports(node, source: str, file: str, lang: str) -> list[Import]:
 
     def walk(n):
         if n.type in target_types:
-            text = source[n.start_byte:n.end_byte]
+            text = _source_slice(source_bytes, n.start_byte, n.end_byte)
             imports.append(
                 Import(
                     source=text,
