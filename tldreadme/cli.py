@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sys
 
+AUDIT_PROFILE_CHOICES = ["owasp-web", "owasp-api", "owasp-llm", "owasp-mcp"]
+
 
 @click.group()
 def main():
@@ -91,6 +93,10 @@ def _run_audit_cli(
     dry_run: bool,
     json_output: bool,
     garak_config: str | None = None,
+    offline: bool = False,
+    download_offline_db: bool = False,
+    kev_catalog: str | None = None,
+    profile: str | None = None,
 ):
     """Shared handler for human-facing audit commands."""
 
@@ -101,55 +107,106 @@ def _run_audit_cli(
         root=root,
         dry_run=dry_run,
         garak_config=garak_config,
+        offline=offline,
+        download_offline_db=download_offline_db,
+        kev_catalog_path=kev_catalog,
+        profile=profile,
     )
     click.echo(json.dumps(report, indent=2, default=str) if json_output else render_audit_report(report))
 
 
 @audit.command("deps")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
+@click.option("--offline", is_flag=True, help="Prefer OSV-Scanner offline mode for dependency vulnerabilities.")
+@click.option("--download-offline-db", is_flag=True, help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.")
+@click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
+@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_deps(root: str, dry_run: bool, json_output: bool):
+def audit_deps(
+    root: str,
+    offline: bool,
+    download_offline_db: bool,
+    kev_catalog: str | None,
+    profile: str | None,
+    dry_run: bool,
+    json_output: bool,
+):
     """Audit local dependencies with OSV-Scanner or pip-audit."""
-    _run_audit_cli("deps", root=root, dry_run=dry_run, json_output=json_output)
+    _run_audit_cli(
+        "deps",
+        root=root,
+        dry_run=dry_run,
+        json_output=json_output,
+        offline=offline,
+        download_offline_db=download_offline_db,
+        kev_catalog=kev_catalog,
+        profile=profile,
+    )
 
 
 @audit.command("code")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
+@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_code(root: str, dry_run: bool, json_output: bool):
+def audit_code(root: str, profile: str | None, dry_run: bool, json_output: bool):
     """Audit first-party code with Semgrep or Bandit."""
-    _run_audit_cli("code", root=root, dry_run=dry_run, json_output=json_output)
+    _run_audit_cli("code", root=root, dry_run=dry_run, json_output=json_output, profile=profile)
 
 
 @audit.command("secrets")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
+@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_secrets(root: str, dry_run: bool, json_output: bool):
+def audit_secrets(root: str, profile: str | None, dry_run: bool, json_output: bool):
     """Audit for committed secrets with Gitleaks."""
-    _run_audit_cli("secrets", root=root, dry_run=dry_run, json_output=json_output)
+    _run_audit_cli("secrets", root=root, dry_run=dry_run, json_output=json_output, profile=profile)
 
 
 @audit.command("llm")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
 @click.option("--garak-config", type=click.Path(exists=True, dir_okay=False), help="Explicit Garak config file for the target model and probes.")
+@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_llm(root: str, garak_config: str | None, dry_run: bool, json_output: bool):
+def audit_llm(root: str, garak_config: str | None, profile: str | None, dry_run: bool, json_output: bool):
     """Audit an LLM target with Garak when an explicit config is provided."""
-    _run_audit_cli("llm", root=root, dry_run=dry_run, json_output=json_output, garak_config=garak_config)
+    _run_audit_cli("llm", root=root, dry_run=dry_run, json_output=json_output, garak_config=garak_config, profile=profile)
 
 
 @audit.command("all")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
 @click.option("--garak-config", type=click.Path(exists=True, dir_okay=False), help="Optional Garak config file to include LLM probes in the full audit.")
+@click.option("--offline", is_flag=True, help="Prefer OSV-Scanner offline mode for dependency vulnerabilities.")
+@click.option("--download-offline-db", is_flag=True, help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.")
+@click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
+@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
 @click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_all(root: str, garak_config: str | None, dry_run: bool, json_output: bool):
+def audit_all(
+    root: str,
+    garak_config: str | None,
+    offline: bool,
+    download_offline_db: bool,
+    kev_catalog: str | None,
+    profile: str | None,
+    dry_run: bool,
+    json_output: bool,
+):
     """Run the full local audit sweep across deps, code, secrets, and optional LLM probes."""
-    _run_audit_cli("all", root=root, dry_run=dry_run, json_output=json_output, garak_config=garak_config)
+    _run_audit_cli(
+        "all",
+        root=root,
+        dry_run=dry_run,
+        json_output=json_output,
+        garak_config=garak_config,
+        offline=offline,
+        download_offline_db=download_offline_db,
+        kev_catalog=kev_catalog,
+        profile=profile,
+    )
 
 
 @main.command(name="lsp", hidden=True)

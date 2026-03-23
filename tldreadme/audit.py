@@ -18,12 +18,63 @@ CATEGORY_SCANNERS = {
     "secrets": ("gitleaks",),
     "llm": ("garak",),
 }
+POLICY_PROFILES = {
+    "owasp-web": {
+        "name": "OWASP Top 10",
+        "description": "General web application security focus.",
+        "recommended_categories": ("deps", "code", "secrets"),
+        "focus_areas": (
+            "injection and unsafe deserialization",
+            "broken access control and authz gaps",
+            "security logging, SSRF, and insecure defaults",
+        ),
+    },
+    "owasp-api": {
+        "name": "OWASP API Security Top 10",
+        "description": "API-specific trust boundary and authorization focus.",
+        "recommended_categories": ("deps", "code", "secrets"),
+        "focus_areas": (
+            "broken object and function level authorization",
+            "mass assignment and excessive data exposure",
+            "rate limiting, auth, and inventory gaps",
+        ),
+    },
+    "owasp-llm": {
+        "name": "OWASP LLM Top 10",
+        "description": "Prompt injection and model misuse focus.",
+        "recommended_categories": ("code", "llm", "secrets"),
+        "focus_areas": (
+            "prompt injection and indirect prompt control",
+            "sensitive information disclosure",
+            "unsafe tool use, output handling, and model abuse",
+        ),
+    },
+    "owasp-mcp": {
+        "name": "OWASP MCP Top 10",
+        "description": "MCP server and agent tool-surface focus.",
+        "recommended_categories": ("code", "secrets", "llm"),
+        "focus_areas": (
+            "tool abuse and overbroad capability exposure",
+            "context poisoning and unsafe prompt/tool chaining",
+            "credential leakage and server boundary mistakes",
+        ),
+    },
+}
+TOOL_DISPLAY_NAMES = {
+    "osv-scanner": "OSV-Scanner",
+    "pip-audit": "pip-audit",
+    "semgrep": "Semgrep",
+    "bandit": "Bandit",
+    "gitleaks": "Gitleaks",
+    "garak": "Garak",
+}
 
 
 def _empty_summary() -> dict[str, int]:
     """Build an empty severity summary."""
 
     summary = {level: 0 for level in SEVERITY_ORDER}
+    summary["kev"] = 0
     summary["total"] = 0
     return summary
 
@@ -48,8 +99,88 @@ def _summarize_findings(findings: list[dict[str, object]]) -> dict[str, int]:
     for finding in findings:
         severity = _normalize_severity(finding.get("severity"))
         summary[severity] += 1
+        if finding.get("known_exploited"):
+            summary["kev"] += 1
         summary["total"] += 1
     return summary
+
+
+def _load_kev_catalog(path: str | None) -> dict[str, dict[str, object]]:
+    """Load a local CISA KEV catalog and index it by CVE identifier."""
+
+    if not path:
+        return {}
+
+    payload = _parse_json(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {}
+
+    indexed: dict[str, dict[str, object]] = {}
+    for item in payload.get("vulnerabilities", []):
+        cve = str(item.get("cveID") or "").strip().upper()
+        if cve:
+            indexed[cve] = item
+    return indexed
+
+
+def _apply_kev(findings: list[dict[str, object]], kev_catalog: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+    """Annotate findings with KEV metadata when a CVE is known exploited."""
+
+    if not kev_catalog:
+        return findings
+
+    annotated: list[dict[str, object]] = []
+    for finding in findings:
+        aliases = [str(alias).upper() for alias in finding.get("aliases", [])]
+        candidates = [str(finding.get("id") or "").upper(), *aliases]
+        match = next((kev_catalog[candidate] for candidate in candidates if candidate in kev_catalog), None)
+        if not match:
+            annotated.append(finding)
+            continue
+
+        enriched = dict(finding)
+        enriched["known_exploited"] = True
+        enriched["kev_due_date"] = match.get("dueDate")
+        enriched["kev_vendor_project"] = match.get("vendorProject")
+        enriched["kev_product"] = match.get("product")
+        annotated.append(enriched)
+
+    return annotated
+
+
+def _profile_metadata(profile: str | None) -> dict[str, object] | None:
+    """Return the normalized policy profile metadata."""
+
+    if not profile:
+        return None
+
+    data = POLICY_PROFILES.get(profile)
+    if not data:
+        raise ValueError(f"Unsupported audit policy profile: {profile}")
+
+    return {
+        "id": profile,
+        "name": data["name"],
+        "description": data["description"],
+        "recommended_categories": list(data["recommended_categories"]),
+        "focus_areas": list(data["focus_areas"]),
+    }
+
+
+def _check_payload(tool_id: str, checks_by_id: dict[str, dict[str, object]]) -> dict[str, object]:
+    """Return an existing audit check or a safe placeholder."""
+
+    check = checks_by_id.get(tool_id)
+    if check is not None:
+        return check
+
+    return {
+        "name": TOOL_DISPLAY_NAMES.get(tool_id, tool_id),
+        "tool_id": tool_id,
+        "status": "warn",
+        "details": f"{TOOL_DISPLAY_NAMES.get(tool_id, tool_id)} availability was not reported.",
+        "install_options": [],
+    }
 
 
 def _shell_join(command: list[str]) -> str:
@@ -290,9 +421,26 @@ def _parse_gitleaks(payload: object) -> list[dict[str, object]]:
 
 
 def _run_osv(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+    return _run_osv_with_options(root, dry_run=dry_run, install_options=install_options)
+
+
+def _run_osv_with_options(
+    root: Path,
+    *,
+    dry_run: bool,
+    install_options: list[dict[str, str]],
+    offline: bool = False,
+    download_offline_db: bool = False,
+) -> dict[str, object]:
+    command = ["osv-scanner", "scan", "--format", "json"]
+    if offline:
+        command.append("--offline")
+    if download_offline_db:
+        command.append("--download-offline-databases")
+    command.append(str(root))
     return _run_json_command(
         "OSV-Scanner",
-        ["osv-scanner", "scan", "--format", "json", str(root)],
+        command,
         _parse_osv,
         dry_run=dry_run,
         install_options=install_options,
@@ -471,6 +619,7 @@ def _merge_summaries(results: list[dict[str, object]]) -> dict[str, int]:
         result_summary = result.get("summary", {})
         for key in SEVERITY_ORDER:
             summary[key] += int(result_summary.get(key, 0))
+        summary["kev"] += int(result_summary.get("kev", 0))
         summary["total"] += int(result_summary.get("total", 0))
     return summary
 
@@ -494,13 +643,28 @@ def run_audit(
     root: str = ".",
     dry_run: bool = False,
     garak_config: str | None = None,
+    offline: bool = False,
+    download_offline_db: bool = False,
+    kev_catalog_path: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, object]:
     """Run one audit category or the full audit suite."""
 
     root_path = Path(root).resolve()
+    kev_catalog = _load_kev_catalog(kev_catalog_path)
+    policy_profile = _profile_metadata(profile)
     if category == "all":
         category_results = [
-            run_audit(name, root=str(root_path), dry_run=dry_run, garak_config=garak_config)
+            run_audit(
+                name,
+                root=str(root_path),
+                dry_run=dry_run,
+                garak_config=garak_config,
+                offline=offline,
+                download_offline_db=download_offline_db,
+                kev_catalog_path=kev_catalog_path,
+                profile=profile,
+            )
             for name in CATEGORY_SCANNERS
         ]
         summary = _merge_summaries(category_results)
@@ -518,6 +682,7 @@ def run_audit(
             "checks": [check for result in category_results for check in result.get("checks", [])],
             "scanners": [scanner for result in category_results for scanner in result.get("scanners", [])],
             "categories": category_results,
+            "policy_profile": policy_profile,
             "recommended_next_action": next(
                 (
                     result.get("recommended_next_action")
@@ -544,7 +709,7 @@ def run_audit(
 
     scanners: list[dict[str, object]] = []
     for tool_id in CATEGORY_SCANNERS[category]:
-        check = checks_by_id[tool_id]
+        check = _check_payload(tool_id, checks_by_id)
         install_options = list(check.get("install_options", []))
         if selected_tool_id == tool_id:
             runner = RUNNERS[tool_id]
@@ -555,6 +720,16 @@ def run_audit(
                         dry_run=dry_run,
                         garak_config=garak_config,
                         install_options=install_options,
+                    )
+                )
+            elif tool_id == "osv-scanner":
+                scanners.append(
+                    _run_osv_with_options(
+                        root_path,
+                        dry_run=dry_run,
+                        install_options=install_options,
+                        offline=offline,
+                        download_offline_db=download_offline_db,
                     )
                 )
             else:
@@ -592,6 +767,15 @@ def run_audit(
             )
         )
 
+    for scanner in scanners:
+        scanner["findings"] = _apply_kev(list(scanner.get("findings", [])), kev_catalog)
+        scanner["summary"] = _summarize_findings(scanner["findings"])
+        if scanner["summary"]["kev"]:
+            scanner["details"] = (
+                f"{scanner['summary']['total']} findings reported "
+                f"({scanner['summary']['kev']} known exploited)."
+            )
+
     summary = _merge_summaries(scanners)
     recommended_next_action = (
         "Run the same command without --dry-run to execute the selected local scanner."
@@ -600,6 +784,15 @@ def run_audit(
     )
     if summary["total"] > 0 and not dry_run:
         recommended_next_action = "Review the reported findings, fix the highest-severity issues, then rerun this audit."
+    if summary["kev"] > 0:
+        recommended_next_action = "Prioritize the known exploited findings first, then rerun this audit after remediation."
+    if policy_profile and summary["total"] == 0 and category not in policy_profile["recommended_categories"]:
+        recommended_next_action = (
+            f"{policy_profile['name']} emphasizes {', '.join(policy_profile['recommended_categories'])}; "
+            f"consider auditing one of those categories next."
+        )
+    if offline and selected_tool_id != "osv-scanner" and category == "deps":
+        recommended_next_action = "Offline dependency mode requires OSV-Scanner; install it and rerun `tldr audit deps --offline`."
 
     missing_required_scanner = category != "llm" and selected_tool_id is None
     status = _category_status(scanners)
@@ -616,6 +809,7 @@ def run_audit(
         "summary": summary,
         "checks": checks,
         "scanners": scanners,
+        "policy_profile": policy_profile,
         "recommended_next_action": recommended_next_action,
         "verification_commands": [f"tldr audit {category}"],
     }
@@ -633,9 +827,14 @@ def render_audit_report(report: dict[str, object]) -> str:
         f"{summary.get('high', 0)} high, "
         f"{summary.get('medium', 0)} medium, "
         f"{summary.get('low', 0)} low, "
+        f"{summary.get('kev', 0)} known exploited, "
         f"{summary.get('unknown', 0)} unknown "
         f"({summary.get('total', 0)} total)"
     )
+
+    policy_profile = report.get("policy_profile")
+    if policy_profile:
+        lines.append(f"Profile: {policy_profile['id']} - {policy_profile['description']}")
 
     if report.get("category") == "all":
         for category_result in report.get("categories", []):

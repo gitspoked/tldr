@@ -1,5 +1,6 @@
 """Tests for the local audit runner."""
 
+import json
 from types import SimpleNamespace
 
 from tldreadme import audit
@@ -33,8 +34,13 @@ def test_run_audit_prefers_first_available_scanner(monkeypatch, tmp_path):
 
     monkeypatch.setitem(
         audit.RUNNERS,
-        "osv-scanner",
-        lambda root, *, dry_run, install_options: audit._base_result(
+        "pip-audit",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("fallback runner should not execute")),
+    )
+    monkeypatch.setattr(
+        audit,
+        "_run_osv_with_options",
+        lambda root, *, dry_run, install_options, offline=False, download_offline_db=False: audit._base_result(
             "OSV-Scanner",
             "ok",
             f"scanned {root}",
@@ -42,11 +48,6 @@ def test_run_audit_prefers_first_available_scanner(monkeypatch, tmp_path):
             findings=[],
             install_options=install_options,
         ),
-    )
-    monkeypatch.setitem(
-        audit.RUNNERS,
-        "pip-audit",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("fallback runner should not execute")),
     )
 
     report = audit.run_audit("deps", root=str(tmp_path))
@@ -94,6 +95,98 @@ def test_run_audit_llm_requires_config(monkeypatch, tmp_path):
     assert report["status"] == "skip"
     assert report["scanners"][0]["status"] == "skip"
     assert "--garak-config" in report["scanners"][0]["details"]
+
+
+def test_run_osv_offline_flags_show_up_in_dry_run(tmp_path):
+    result = audit._run_osv_with_options(
+        tmp_path,
+        dry_run=True,
+        install_options=[],
+        offline=True,
+        download_offline_db=True,
+    )
+
+    assert "--offline" in result["command"]
+    assert "--download-offline-databases" in result["command"]
+
+
+def test_run_audit_annotates_known_exploited_findings(monkeypatch, tmp_path):
+    kev_path = tmp_path / "kev.json"
+    kev_path.write_text(
+        json.dumps(
+            {
+                "vulnerabilities": [
+                    {
+                        "cveID": "CVE-2024-9999",
+                        "vendorProject": "Example",
+                        "product": "Demo",
+                        "dueDate": "2026-04-01",
+                    }
+                ]
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        audit,
+        "audit_tool_checks",
+        lambda _categories=None: [_audit_check("OSV-Scanner", "osv-scanner")],
+    )
+    monkeypatch.setitem(
+        audit.RUNNERS,
+        "pip-audit",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("fallback runner should not execute")),
+    )
+    monkeypatch.setattr(
+        audit,
+        "_run_osv_with_options",
+        lambda root, *, dry_run, install_options, offline=False, download_offline_db=False: audit._base_result(
+            "OSV-Scanner",
+            "warn",
+            f"scanned {root}",
+            command=["osv-scanner", "scan"],
+            findings=[
+                {
+                    "id": "CVE-2024-9999",
+                    "title": "Known issue",
+                    "severity": "medium",
+                    "aliases": [],
+                }
+            ],
+            install_options=install_options,
+        ),
+    )
+
+    report = audit.run_audit("deps", root=str(tmp_path), kev_catalog_path=str(kev_path))
+
+    assert report["summary"]["kev"] == 1
+    assert report["scanners"][0]["findings"][0]["known_exploited"] is True
+    assert "known exploited" in report["recommended_next_action"].lower()
+
+
+def test_run_audit_attaches_policy_profile(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        audit,
+        "audit_tool_checks",
+        lambda _categories=None: [_audit_check("Semgrep", "semgrep")],
+    )
+    monkeypatch.setitem(
+        audit.RUNNERS,
+        "semgrep",
+        lambda root, *, dry_run, install_options: audit._base_result(
+            "Semgrep",
+            "ok",
+            f"scanned {root}",
+            command=["python", "-m", "semgrep"],
+            findings=[],
+            install_options=install_options,
+        ),
+    )
+
+    report = audit.run_audit("code", root=str(tmp_path), profile="owasp-mcp")
+
+    assert report["policy_profile"]["id"] == "owasp-mcp"
+    assert report["policy_profile"]["recommended_categories"] == ["code", "secrets", "llm"]
 
 
 def test_run_semgrep_parses_json_findings(monkeypatch, tmp_path):
