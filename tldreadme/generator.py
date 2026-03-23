@@ -12,6 +12,7 @@ def generate_claude_md(root: Path, output_dir: str = ".claude") -> Path:
     This is the 'init' feature — TLDREADME has already indexed the code,
     now it serializes its understanding into files that bootstrap any LLM.
     """
+    root = root.resolve()
     out = root / output_dir
     out.mkdir(exist_ok=True)
 
