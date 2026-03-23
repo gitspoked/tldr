@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`tldreadme/` is the Python package. Keep CLI wiring in `tldreadme/cli.py` and place core logic in focused modules such as `asts.py`, `deps.py`, `context_docs.py`, `embedder.py`, `grapher.py`, `pipeline.py`, `rag.py`, and `mcp_server.py`. `parser.py` is a compatibility facade during the split. Put tests in `tests/` using matching names like `test_cli.py` and `test_parser.py`. Root-level docs live in `README.md`, `SETUP.md`, `USAGE.md`, and `CLAUDE.md`. Docker and model configuration live in `docker-compose*.yml` and `litellm-config.yaml`. Local runtime state belongs in `.tldr/`; generated Claude context files are written under `.claude/`.
+`tldreadme/` is the Python package. Keep CLI wiring in `tldreadme/cli.py` and place core logic in focused modules such as `asts.py`, `deps.py`, `context_docs.py`, `embedder.py`, `grapher.py`, `pipeline.py`, `rag.py`, and `mcp_server.py`. `parser.py` is a compatibility facade during the split. Put tests in `tests/` using matching names like `test_cli.py` and `test_parser.py`. Root-level docs live in `README.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md`, `SETUP.md`, and `USAGE.md`. Docker and model configuration live in `docker-compose*.yml` and `litellm-config.yaml`. Local runtime state belongs in `.tldr/`; generated Claude context files are written under `.claude/`.
 
 ## Build, Test, and Development Commands
 Create an environment with `python3.12 -m venv .venv` and install locally with `.venv/bin/pip install -e '.[dev]'`. Start the default local stack with `docker compose up -d` or use `docker compose -f docker-compose.llm.yml up -d` when testing the LiteLLM path. Common development commands:
