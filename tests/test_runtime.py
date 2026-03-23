@@ -91,3 +91,34 @@ def test_capability_report_derives_backend_availability(monkeypatch):
     assert capabilities["backends"]["llm"] is True
     assert capabilities["backends"]["lsp"] is True
     assert capabilities["backends"]["git"] is True
+
+
+def test_audit_tool_checks_report_binary_and_python_scanners(monkeypatch):
+    monkeypatch.setattr(
+        runtime,
+        "which",
+        lambda name: {
+            "osv-scanner": "/opt/homebrew/bin/osv-scanner",
+            "gitleaks": "/opt/homebrew/bin/gitleaks",
+        }.get(name),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "find_spec",
+        lambda name: object() if name in {"pip_audit", "semgrep"} else None,
+    )
+    monkeypatch.setattr(runtime, "version", lambda _name: "1.2.3")
+
+    checks = runtime.audit_tool_checks(("deps", "code", "secrets"))
+
+    assert any(check["name"] == "OSV-Scanner" and check["status"] == "ok" for check in checks)
+    assert any(check["name"] == "pip-audit" and check["status"] == "ok" for check in checks)
+    assert any(check["name"] == "Semgrep" and check["status"] == "ok" for check in checks)
+    assert any(check["name"] == "Bandit" and check["status"] == "warn" for check in checks)
+    assert any(check["name"] == "Gitleaks" and check["status"] == "ok" for check in checks)
+
+
+def test_install_options_for_semgrep_include_python_install():
+    options = runtime.install_options_for_check(runtime._check("Semgrep", "warn", "missing", category="audit"))
+
+    assert any(option["command"] == "python3.12 -m pip install semgrep" for option in options)

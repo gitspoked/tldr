@@ -2,134 +2,157 @@ schema_version: 1
 document_type: tldreadme/plan
 id: local-audit-pipeline-20260323
 title: Add local tldr audit pipeline
-status: pending
+status: done
 goal: Add a local-first `tldr audit` command that runs dependency, code, secrets,
   and LLM/adversarial security checks with actionable local reporting.
 scope:
-  - tldreadme/cli.py
-  - tldreadme/runtime.py
-  - tldreadme/audit.py
-  - README.md
-  - tests/
+- tldreadme/cli.py
+- tldreadme/runtime.py
+- tldreadme/audit.py
+- README.md
+- tests/
 owner: shared
 success_criteria:
-  - '`tldr audit deps`, `code`, `secrets`, `llm`, and `all` exist with clear help text.'
-  - Missing local scanners degrade cleanly with doctor-style guidance instead of hard crashes.
-  - Audit results render in both human-readable and JSON forms.
-  - Tests cover capability detection, command routing, and missing-tool behavior.
+- '`tldr audit deps`, `code`, `secrets`, `llm`, and `all` exist with clear help text.'
+- Missing local scanners degrade cleanly with doctor-style guidance instead of hard
+  crashes.
+- Audit results render in both human-readable and JSON forms.
+- Tests cover capability detection, command routing, and missing-tool behavior.
 risks:
-  - External scanners vary by installation path and output format.
-  - LLM/adversarial scanning is slower and may need to stay optional.
-  - Audit must remain human-first and should not widen the router-default MCP surface.
+- External scanners vary by installation path and output format.
+- LLM/adversarial scanning is slower and may need to stay optional.
+- Audit must remain human-first and should not widen the router-default MCP surface.
 notes:
-  - Auto-iterate ran against the current repo but returned low-signal maintenance advice.
-  - Keep the feature local-first with thin wrappers around established tools instead of inventing a custom scanner.
-  - First-pass scanner targets should include pip-audit or osv-scanner, semgrep or bandit, gitleaks or trufflehog, and garak.
+- Auto-iterate ran against the current repo but returned low-signal maintenance advice.
+- Keep the feature local-first with thin wrappers around established tools instead
+  of inventing a custom scanner.
+- First-pass scanner targets should include pip-audit or osv-scanner, semgrep or bandit,
+  gitleaks or trufflehog, and garak.
+- First-pass local audit pipeline landed with docs and tests.
 phases:
-  - name: Discovery
-    status: pending
-    tasks:
-      - id: audit-surface
-        title: Define the `tldr audit` command surface and capability model
-        phase: Discovery
-        status: pending
-        priority: high
-        depends_on: []
-        files:
-          - tldreadme/cli.py
-          - tldreadme/runtime.py
-          - README.md
-        acceptance_criteria:
-          - 'The audit categories and command shape are fixed: deps, code, secrets, llm, and all.'
-          - Required versus optional local tools are explicit and discoverable.
-          - Missing-tool guidance follows the existing doctor-style reporting pattern.
-        verification_commands:
-          - .venv/bin/python -m pytest -q tests/test_cli.py tests/test_runtime.py
-        evidence: []
-        blockers: []
-        notes:
-          - Keep audit human-first; do not widen the router-default MCP surface.
-        next_step: Draft command signatures and runtime capability mapping.
-        created_at: '2026-03-23T06:00:00+00:00'
-        updated_at: '2026-03-23T06:00:00+00:00'
-  - name: Implementation
-    status: pending
-    tasks:
-      - id: audit-engine
-        title: Implement a local audit runner and normalized report schema
-        phase: Implementation
-        status: pending
-        priority: high
-        depends_on:
-          - audit-surface
-        files:
-          - tldreadme/audit.py
-          - tldreadme/runtime.py
-        acceptance_criteria:
-          - Local scanner adapters normalize findings into one report shape.
-          - Audit categories can enable or skip scanners independently.
-          - The report schema supports both summary and detailed outputs.
-        verification_commands:
-          - .venv/bin/python -m pytest -q tests/test_audit.py
-        evidence: []
-        blockers: []
-        notes:
-          - Start with command discovery and dry-run execution hooks before deep parser logic.
-        next_step: Add the runner registry and normalized result payload.
-        created_at: '2026-03-23T06:00:00+00:00'
-        updated_at: '2026-03-23T06:00:00+00:00'
-      - id: audit-cli
-        title: Wire `tldr audit` into the CLI with human-readable and JSON output
-        phase: Implementation
-        status: pending
-        priority: high
-        depends_on:
-          - audit-engine
-        files:
-          - tldreadme/cli.py
-          - README.md
-        acceptance_criteria:
-          - '`tldr audit` has clear subcommands or category selection.'
-          - Human output is concise and severity-oriented.
-          - JSON output is stable enough for future automation.
-        verification_commands:
-          - .venv/bin/python -m pytest -q tests/test_cli.py tests/test_audit.py
-        evidence: []
-        blockers: []
-        notes:
-          - Reuse existing doctor/reporting tone where it helps.
-        next_step: Add CLI options, rendering helpers, and JSON output.
-        created_at: '2026-03-23T06:00:00+00:00'
-        updated_at: '2026-03-23T06:00:00+00:00'
-  - name: Verification
-    status: pending
-    tasks:
-      - id: audit-verify
-        title: Add tests, docs, and first-pass local scanner guidance
-        phase: Verification
-        status: pending
-        priority: medium
-        depends_on:
-          - audit-cli
-        files:
-          - README.md
-          - TLDREADME.md
-          - tests/test_audit.py
-          - tests/test_cli.py
-        acceptance_criteria:
-          - Docs explain the expected local scanners and optional nature of slower tools.
-          - Test coverage includes missing-tool behavior and happy-path command selection.
-          - A manual smoke path is documented for local validation.
-        verification_commands:
-          - .venv/bin/python -m pytest -q
-          - PYTHONPYCACHEPREFIX=/tmp/codex-pyc312 .venv/bin/python -m compileall tldreadme tests
-        evidence: []
-        blockers: []
-        notes:
-          - Keep the first pass local and composable; richer policy can come later.
-        next_step: Document scanner setup and run the full suite.
-        created_at: '2026-03-23T06:00:00+00:00'
-        updated_at: '2026-03-23T06:00:00+00:00'
+- name: Discovery
+  status: done
+  tasks:
+  - id: audit-surface
+    title: Define the `tldr audit` command surface and capability model
+    phase: Discovery
+    status: done
+    priority: high
+    depends_on: []
+    files:
+    - tldreadme/cli.py
+    - tldreadme/runtime.py
+    - README.md
+    acceptance_criteria:
+    - 'The audit categories and command shape are fixed: deps, code, secrets, llm,
+      and all.'
+    - Required versus optional local tools are explicit and discoverable.
+    - Missing-tool guidance follows the existing doctor-style reporting pattern.
+    verification_commands:
+    - .venv/bin/python -m pytest -q tests/test_cli.py tests/test_runtime.py
+    evidence:
+    - .venv/bin/python -m pytest -q
+    - PYTHONPYCACHEPREFIX=/tmp/codex-pyc312 .venv/bin/python -m compileall tldreadme
+      tests
+    blockers: []
+    notes:
+    - Keep audit human-first; do not widen the router-default MCP surface.
+    - Implemented local-first audit CLI and normalized scanner runner.
+    next_step: Draft command signatures and runtime capability mapping.
+    created_at: '2026-03-23T06:00:00+00:00'
+    updated_at: '2026-03-23T13:24:31+00:00'
+- name: Implementation
+  status: done
+  tasks:
+  - id: audit-engine
+    title: Implement a local audit runner and normalized report schema
+    phase: Implementation
+    status: done
+    priority: high
+    depends_on:
+    - audit-surface
+    files:
+    - tldreadme/audit.py
+    - tldreadme/runtime.py
+    acceptance_criteria:
+    - Local scanner adapters normalize findings into one report shape.
+    - Audit categories can enable or skip scanners independently.
+    - The report schema supports both summary and detailed outputs.
+    verification_commands:
+    - .venv/bin/python -m pytest -q tests/test_audit.py
+    evidence:
+    - .venv/bin/python -m pytest -q
+    - PYTHONPYCACHEPREFIX=/tmp/codex-pyc312 .venv/bin/python -m compileall tldreadme
+      tests
+    blockers: []
+    notes:
+    - Start with command discovery and dry-run execution hooks before deep parser
+      logic.
+    - Implemented local-first audit CLI and normalized scanner runner.
+    next_step: Add the runner registry and normalized result payload.
+    created_at: '2026-03-23T06:00:00+00:00'
+    updated_at: '2026-03-23T13:24:31+00:00'
+  - id: audit-cli
+    title: Wire `tldr audit` into the CLI with human-readable and JSON output
+    phase: Implementation
+    status: done
+    priority: high
+    depends_on:
+    - audit-engine
+    files:
+    - tldreadme/cli.py
+    - README.md
+    acceptance_criteria:
+    - '`tldr audit` has clear subcommands or category selection.'
+    - Human output is concise and severity-oriented.
+    - JSON output is stable enough for future automation.
+    verification_commands:
+    - .venv/bin/python -m pytest -q tests/test_cli.py tests/test_audit.py
+    evidence:
+    - .venv/bin/python -m pytest -q
+    - PYTHONPYCACHEPREFIX=/tmp/codex-pyc312 .venv/bin/python -m compileall tldreadme
+      tests
+    blockers: []
+    notes:
+    - Reuse existing doctor/reporting tone where it helps.
+    - Implemented local-first audit CLI and normalized scanner runner.
+    next_step: Add CLI options, rendering helpers, and JSON output.
+    created_at: '2026-03-23T06:00:00+00:00'
+    updated_at: '2026-03-23T13:24:31+00:00'
+- name: Verification
+  status: done
+  tasks:
+  - id: audit-verify
+    title: Add tests, docs, and first-pass local scanner guidance
+    phase: Verification
+    status: done
+    priority: medium
+    depends_on:
+    - audit-cli
+    files:
+    - README.md
+    - TLDREADME.md
+    - tests/test_audit.py
+    - tests/test_cli.py
+    acceptance_criteria:
+    - Docs explain the expected local scanners and optional nature of slower tools.
+    - Test coverage includes missing-tool behavior and happy-path command selection.
+    - A manual smoke path is documented for local validation.
+    verification_commands:
+    - .venv/bin/python -m pytest -q
+    - PYTHONPYCACHEPREFIX=/tmp/codex-pyc312 .venv/bin/python -m compileall tldreadme
+      tests
+    evidence:
+    - .venv/bin/python -m pytest -q
+    - PYTHONPYCACHEPREFIX=/tmp/codex-pyc312 .venv/bin/python -m compileall tldreadme
+      tests
+    blockers: []
+    notes:
+    - Keep the first pass local and composable; richer policy can come later.
+    - Implemented local-first audit CLI and normalized scanner runner.
+    next_step: Document scanner setup and run the full suite.
+    created_at: '2026-03-23T06:00:00+00:00'
+    updated_at: '2026-03-23T13:24:31+00:00'
 created_at: '2026-03-23T06:00:00+00:00'
-updated_at: '2026-03-23T06:00:00+00:00'
+updated_at: '2026-03-23T13:24:31+00:00'
 archived_at: null

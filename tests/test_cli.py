@@ -10,6 +10,7 @@ def test_cli_help():
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "TLDREADME" in result.output
+    assert "audit" in result.output
     assert "children" in result.output
     assert "plans-capture" in result.output
     assert "whats-next" in result.output
@@ -48,6 +49,17 @@ def test_cli_ask_help():
     result = runner.invoke(main, ["ask", "--help"])
     assert result.exit_code == 0
     assert "QUESTION" in result.output
+
+
+def test_cli_audit_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["audit", "--help"])
+    assert result.exit_code == 0
+    assert "deps" in result.output
+    assert "code" in result.output
+    assert "secrets" in result.output
+    assert "llm" in result.output
+    assert "all" in result.output
 
 
 def test_cli_lsp_help():
@@ -102,6 +114,28 @@ def test_cli_children_help():
     assert "list" in result.output
     assert "merge" in result.output
     assert "ignore" in result.output
+
+
+def test_cli_audit_json_output(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "tldreadme.audit.run_audit",
+        lambda category, **_kwargs: {
+            "category": category,
+            "root": str(tmp_path),
+            "ok": True,
+            "summary": {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0, "total": 0},
+            "checks": [],
+            "scanners": [],
+            "recommended_next_action": "Run the next audit.",
+            "verification_commands": [f"tldr audit {category}"],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["audit", "deps", str(tmp_path), "--json-output"])
+
+    assert result.exit_code == 0
+    assert '"category": "deps"' in result.output
 
 
 def test_cli_doctor_runs():
