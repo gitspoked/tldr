@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from .runtime import ensure_rg_runtime
+
 
 @dataclass
 class SearchHit:
@@ -42,7 +44,7 @@ def rg_search(
         max_results: cap results
         fixed_strings: treat pattern as literal, not regex
     """
-    cmd = ["rg", "--json", "-C", str(context)]
+    cmd = [ensure_rg_runtime(), "--json", "-C", str(context)]
 
     if case_insensitive:
         cmd.append("-i")
@@ -69,10 +71,8 @@ def rg_search(
     cmd.extend(paths)
 
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
         return []
 
     hits = []
@@ -143,7 +143,7 @@ def rg_files(
     file_type: Optional[str] = None,
 ) -> list[str]:
     """Return just file paths that match (rg -l)."""
-    cmd = ["rg", "-l", "-i"]
+    cmd = [ensure_rg_runtime(), "-l", "-i"]
 
     if glob:
         cmd.extend(["--glob", glob])
@@ -161,10 +161,8 @@ def rg_files(
     cmd.extend(paths)
 
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
         return []
 
     return [f for f in result.stdout.strip().splitlines() if f]
@@ -172,7 +170,7 @@ def rg_files(
 
 def rg_count(pattern: str, paths: list[str], file_type: Optional[str] = None) -> dict:
     """Count matches per file (rg -c)."""
-    cmd = ["rg", "-c", "-i"]
+    cmd = [ensure_rg_runtime(), "-c", "-i"]
 
     if file_type:
         cmd.extend(["--type", file_type])
@@ -188,10 +186,8 @@ def rg_count(pattern: str, paths: list[str], file_type: Optional[str] = None) ->
     cmd.extend(paths)
 
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
         return {}
 
     counts = {}

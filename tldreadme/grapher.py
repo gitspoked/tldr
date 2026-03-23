@@ -1,7 +1,7 @@
 """FalkorDB graph builder — call graphs, imports, data flow, patterns."""
 
-from falkordb import FalkorDB
 from .parser import ParseResult, Symbol, Import, CallSite
+from .lazy import load_attr
 import os
 
 
@@ -12,8 +12,8 @@ class CodeGrapher:
     """Builds and queries the code knowledge graph in FalkorDB."""
 
     def __init__(self, url: str = None):
-        url = url or os.getenv("FALKORDB_URL", "redis://localhost:16379")
-        self.db = FalkorDB(url=url)
+        url = url or os.getenv("FALKORDB_URL", "redis://localhost:6379")
+        self.db = load_attr("falkordb", "FalkorDB")(url=url)
         self.graph = self.db.select_graph(GRAPH_NAME)
         self._ensure_schema()
 

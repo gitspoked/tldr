@@ -2,13 +2,11 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
-import litellm
 import hashlib
 import os
 
 from .parser import Symbol, ParseResult
+from .lazy import load_attr, load_module
 
 COLLECTION = "tldreadme_code"
 
@@ -17,11 +15,33 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 LITELLM_URL = os.getenv("LITELLM_URL", "")
 EMBED_MODEL = os.getenv("TLDREADME_EMBED_MODEL", "ollama/nomic-embed-text")
 CHAT_MODEL = os.getenv("TLDREADME_CHAT_MODEL", "ollama/qwen2.5-coder:3b-instruct")
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:16333")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 
 def _api_base():
     """Return API base — LiteLLM proxy if configured, otherwise direct Ollama."""
     return LITELLM_URL if LITELLM_URL else OLLAMA_URL
+
+
+def _litellm():
+    """Load litellm only when synthesis or embeddings are needed."""
+
+    return load_module("litellm")
+
+
+def _qdrant_client_cls():
+    """Load QdrantClient lazily."""
+
+    return load_attr("qdrant_client", "QdrantClient")
+
+
+def _qdrant_models():
+    """Load the Qdrant model classes lazily."""
+
+    return {
+        "Distance": load_attr("qdrant_client.models", "Distance"),
+        "VectorParams": load_attr("qdrant_client.models", "VectorParams"),
+        "PointStruct": load_attr("qdrant_client.models", "PointStruct"),
+    }
 
 
 @dataclass
@@ -72,7 +92,7 @@ def symbols_to_chunks(results: list[ParseResult]) -> list[CodeChunk]:
 
 def embed_text(text: str) -> list[float]:
     """Get embedding vector for a piece of text."""
-    resp = litellm.embedding(
+    resp = _litellm().embedding(
         model=EMBED_MODEL,
         input=[text],
         api_base=_api_base(),
@@ -82,7 +102,7 @@ def embed_text(text: str) -> list[float]:
 
 def _embed_one_batch(batch: list[str]) -> list[list[float]]:
     """Embed a single batch — used as a unit of work for parallel execution."""
-    resp = litellm.embedding(
+    resp = _litellm().embedding(
         model=EMBED_MODEL,
         input=batch,
         api_base=_api_base(),
@@ -109,7 +129,7 @@ class CodeEmbedder:
     """Manages embedding storage in Qdrant."""
 
     def __init__(self, qdrant_url: str = None):
-        self.client = QdrantClient(url=qdrant_url or QDRANT_URL)
+        self.client = _qdrant_client_cls()(url=qdrant_url or QDRANT_URL)
         self._ensure_collection()
 
     def _ensure_collection(self):
@@ -136,17 +156,19 @@ class CodeEmbedder:
 
         # Create collection on first use (auto-detect dimension)
         if not self._collection_created:
+            models = _qdrant_models()
             self.client.create_collection(
                 collection_name=COLLECTION,
-                vectors_config=VectorParams(size=len(vectors[0]), distance=Distance.COSINE),
+                vectors_config=models["VectorParams"](size=len(vectors[0]), distance=models["Distance"].COSINE),
             )
             self._collection_created = True
 
         # Upsert points — use deterministic chunk_id so re-indexing updates
         # in place instead of creating duplicates
+        point_struct = _qdrant_models()["PointStruct"]
         points = []
         for chunk, vector in zip(chunks, vectors):
-            points.append(PointStruct(
+            points.append(point_struct(
                 id=_chunk_id_to_int(chunk.id),
                 vector=vector,
                 payload={
