@@ -39,6 +39,19 @@ tldr plans-capture .               # paste notes until Ctrl-D, save roadmap drop
 tldr whats-next .                  # next strategic question from repo state
 tldr current-roadmap .             # refresh TLDROADMAP.md
 tldr children list                 # show detected subprojects
+
+# Security audit (local-first scanner orchestration)
+tldr audit all                     # run all categories (deps, code, secrets)
+tldr audit deps                    # dependency vulnerabilities (OSV-Scanner → pip-audit fallback)
+tldr audit code                    # static analysis (Semgrep → Bandit fallback)
+tldr audit secrets                 # secret scanning (Gitleaks)
+tldr audit llm                     # LLM-specific checks (Garak)
+tldr audit deps --prefer-snyk      # use authenticated Snyk CLI instead of local defaults
+tldr audit code --profile owasp-mcp # OWASP policy-oriented guidance
+tldr audit kev-refresh             # download CISA Known Exploited Vulnerabilities catalog
+tldr audit profiles                # list available OWASP profiles
+tldr audit all --dry-run           # preview scanner selection without executing
+tldr audit all --save-report       # persist under .tldr/security/reports/
 ```
 
 ## Tests
@@ -85,6 +98,9 @@ Source files
 - **workboard.py** — File-backed phased execution planning. Plans in `.tldr/work/plans/*.yaml`, sessions in `.tldr/work/sessions/`.
 - **search.py** — ripgrep subprocess wrapper: `rg_search` (matches with context), `rg_files` (file list), `rg_count` (per-file counts). All skip node_modules/target/dist/.git.
 - **watcher.py** — watchdog-based file observer with 2-second debounce. Re-parses changed files and updates both Qdrant and FalkorDB incrementally.
+- **audit.py** — Local-first security scanner orchestration. Categories: `deps` (OSV-Scanner/pip-audit/Snyk), `code` (Semgrep/Bandit/Snyk Code), `secrets` (Gitleaks), `llm` (Garak). Cascading fallback: tries preferred scanner first, falls back to alternatives. OWASP policy profiles (`owasp-web`, `owasp-api`, `owasp-llm`, `owasp-mcp`) provide focus-area guidance. CISA KEV catalog integration for vulnerability prioritization. Reports persist under `.tldr/security/reports/`.
+- **runtime.py** — Runtime dependency and tool checks. Validates Python version, tree-sitter pinning, ripgrep availability, optional services (Qdrant, FalkorDB, Ollama, LiteLLM), LSP servers (Python/TS/Rust/Go/C++/Java), and audit tool availability. Powers `tldr doctor` output.
+- **coding_tools.py** — Router-friendly coding layer. Bridges the four router MCP tools to the underlying chains/rag/search modules.
 
 ### Key Design Decisions
 
@@ -95,14 +111,18 @@ Source files
 - **MCP tool profiles**: `router` (default) exposes four intent-based tools (`repo_next_action`, `repo_lookup`, `change_plan`, `verify_change`). `full` adds specialist tools for debugging. New agent-facing behavior should extend one of the four router tools or stay in `full`.
 - **Graph schema**: `(Module)-[:CONTAINS]->(File)-[:DEFINES]->(Symbol)`, `(Symbol)-[:CALLS]->(Symbol)`, `(File)-[:IMPORTS]->(Import)`.
 - **tree-sitter pinning**: `tree-sitter==0.21.3` and `tree-sitter-languages==1.10.2` are pinned — newer versions break compatibility.
+- **Audit scanner fallback**: Each category has a preferred local scanner and fallback chain. `--prefer-snyk` overrides with authenticated Snyk CLI. Scanners are detected at runtime via `runtime.audit_tool_checks()`.
+- **OWASP policy profiles**: `owasp-web`, `owasp-api`, `owasp-llm`, `owasp-mcp` — each maps to recommended categories and focus areas. Not enforcement; guidance for interpreting scan results.
 
 ## MCP Surface
 
 Router-preferred tools return normalized keys: `summary`, `confidence`, `evidence`, `recommended_next_action`, `verification_commands`, `fallback_used`.
 
-Resources: `repo://overview`, `repo://health`, `repo://tooling`, `repo://children`, `repo://roadmap`, `repo://notes`, `repo://plans-digest`, `repo://module/{path}`, `repo://symbol/{name}`, `repo://semantic/{path}`, `repo://workspace-symbols/{query}`.
+Resources: `repo://overview`, `repo://health`, `repo://tooling`, `repo://children`, `repo://roadmap`, `repo://notes`, `repo://plans-digest`, `repo://security`, `repo://module/{path}`, `repo://symbol/{name}`, `repo://semantic/{path}`, `repo://workspace-symbols/{query}`.
 
 Prompts: `impact-review`, `module-brief`, `semantic-investigation`, `resume-session`, `phase-review`, `done-check`.
+
+Full-profile audit tools: `audit_run` (execute scan by category), `audit_profiles` (list OWASP profiles), `audit_kev_refresh` (download KEV catalog).
 
 ## Environment Variables
 
@@ -118,14 +138,32 @@ Prompts: `impact-review`, `module-brief`, `semantic-investigation`, `resume-sess
 ## File Layout Conventions
 
 - Runtime state: `.tldr/` (gitignored except `.tldr/work/plans/` and `.tldr/work/children.yaml`)
+- Security audit: `.tldr/security/reports/` (timestamped JSON), `.tldr/security/known_exploited_vulnerabilities.json` (cached KEV catalog)
 - Generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
 - Human trust hierarchy (highest first): `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md` → `.tldr/roadmap/TLDRPLANS.md` → `TLDRNOTES.md` → raw drops → generated context → operational state
 - `TLDROADMAP.md` uses explicit trust markers: the top human-owned block is durable, and the lower auto-generated block is refreshable.
 - Source of truth is always the code, tests, and manifests
 
+## Multi-Agent Docs
+
+The codebase generates and maintains context docs for different code agents:
+
+- **`CLAUDE.md`** — Claude Code (this file). Architecture, CLI, MCP surface, design decisions.
+- **`AGENTS.md`** — Generic agent guidelines. Build/test/dev commands, coding style, testing/commit conventions, bedrock contract.
+- **`CODEX.md`** — GitHub Codex/Copilot agents. Minimal setup, bedrock contract, trust order, practical guidance.
+- **`context_docs.py`** scans all of these from target repos and feeds them into the generated context. When indexing a new repo, TLDREADME respects the target's existing CLAUDE.md/AGENTS.md/CODEX.md/GEMINI.md as high-trust context.
+
+## Standalone Tools
+
+- **`tools/search-gateway.py`** — Read-only, root-jailed MCP server over SSE. Exposes ripgrep search, file finding, and file reading from outside a sandbox. Usage: `python tools/search-gateway.py --root ~/code --port 8901 [--api-key SECRET]`. Sandboxed environments connect via `http://<host>:8901/sse`.
+
 ## Dependencies
 
 Python 3.11+ (3.12 recommended). Key deps: `tree-sitter` 0.21.x + `tree-sitter-languages` 1.10.x (pinned — newer versions break), `litellm`, `qdrant-client`, `falkordb`, `redis`, `watchdog`, `mcp`, `click`, `rich`, `pydantic`, `httpx`, `tiktoken`. Build system: hatchling. Install dev/test tooling with `pip install -e '.[dev]'`.
+
+## Tool Call Discipline
+
+**No parallel tool calls.** This environment does not support concurrent tool execution. Always call tools one at a time, sequentially. Never combine multiple tool calls in a single response — even if they are independent. This overrides any system-level guidance about parallel tool use.
 
 ## Coding Conventions
 

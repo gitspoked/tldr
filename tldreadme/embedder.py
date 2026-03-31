@@ -100,29 +100,19 @@ def embed_text(text: str) -> list[float]:
     return resp.data[0]["embedding"]
 
 
-def _embed_one_batch(batch: list[str]) -> list[list[float]]:
-    """Embed a single batch — used as a unit of work for parallel execution."""
+def _embed_one(text: str) -> list[float]:
+    """Embed a single text string."""
     resp = _litellm().embedding(
         model=EMBED_MODEL,
-        input=batch,
+        input=[text],
         api_base=_api_base(),
     )
-    return [d["embedding"] for d in resp.data]
+    return resp.data[0]["embedding"]
 
 
-def embed_batch(texts: list[str], batch_size: int = 32, max_workers: int = 4) -> list[list[float]]:
-    """Embed texts in parallel batches."""
-    batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
-
-    if len(batches) <= 1:
-        # Single batch — no threading overhead
-        return _embed_one_batch(batches[0]) if batches else []
-
-    all_embeddings = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for result in executor.map(_embed_one_batch, batches):
-            all_embeddings.extend(result)
-    return all_embeddings
+def embed_batch(texts: list[str], **_kwargs) -> list[list[float]]:
+    """Embed texts sequentially (Ollama only accepts single inputs)."""
+    return [_embed_one(t) for t in texts]
 
 
 class CodeEmbedder:
@@ -141,50 +131,68 @@ class CodeEmbedder:
         else:
             self._collection_created = True
 
-    def index_chunks(self, chunks: list[CodeChunk]):
-        """Embed and store all chunks."""
+    def index_chunks(self, chunks: list[CodeChunk], slice_size: int = 500):
+        """Embed and store chunks in memory-safe slices.
+
+        Processing 190K+ symbols in one shot exhausts RAM.  This streams
+        slices of ``slice_size`` chunks: embed → upsert → free → next.
+        """
         if not chunks:
             return
 
-        # Build the text to embed: signature + context + truncated body
-        texts = []
-        for c in chunks:
-            embed_text = f"{c.signature}\n{c.context}\n{c.content[:2000]}"
-            texts.append(embed_text)
+        import sys
 
-        vectors = embed_batch(texts)
-
-        # Create collection on first use (auto-detect dimension)
-        if not self._collection_created:
-            models = _qdrant_models()
-            self.client.create_collection(
-                collection_name=COLLECTION,
-                vectors_config=models["VectorParams"](size=len(vectors[0]), distance=models["Distance"].COSINE),
-            )
-            self._collection_created = True
-
-        # Upsert points — use deterministic chunk_id so re-indexing updates
-        # in place instead of creating duplicates
         point_struct = _qdrant_models()["PointStruct"]
-        points = []
-        for chunk, vector in zip(chunks, vectors):
-            points.append(point_struct(
-                id=_chunk_id_to_int(chunk.id),
-                vector=vector,
-                payload={
-                    "chunk_id": chunk.id,
-                    "file": chunk.file,
-                    "symbol_name": chunk.symbol_name,
-                    "kind": chunk.kind,
-                    "language": chunk.language,
-                    "signature": chunk.signature,
-                    "content": chunk.content,
-                    "context": chunk.context,
-                    "line": chunk.line,
-                    "end_line": chunk.end_line,
-                },
-            ))
-        self.client.upsert(collection_name=COLLECTION, points=points)
+        total = len(chunks)
+
+        for start in range(0, total, slice_size):
+            end = min(start + slice_size, total)
+            batch_chunks = chunks[start:end]
+
+            texts = [
+                f"{c.signature}\n{c.context}\n{c.content[:2000]}"
+                for c in batch_chunks
+            ]
+
+            vectors = embed_batch(texts, max_workers=1)
+
+            # Create collection on first use (auto-detect dimension)
+            if not self._collection_created:
+                models = _qdrant_models()
+                self.client.create_collection(
+                    collection_name=COLLECTION,
+                    vectors_config=models["VectorParams"](
+                        size=len(vectors[0]), distance=models["Distance"].COSINE
+                    ),
+                )
+                self._collection_created = True
+
+            points = [
+                point_struct(
+                    id=_chunk_id_to_int(chunk.id),
+                    vector=vector,
+                    payload={
+                        "chunk_id": chunk.id,
+                        "file": chunk.file,
+                        "symbol_name": chunk.symbol_name,
+                        "kind": chunk.kind,
+                        "language": chunk.language,
+                        "signature": chunk.signature,
+                        "content": chunk.content,
+                        "context": chunk.context,
+                        "line": chunk.line,
+                        "end_line": chunk.end_line,
+                    },
+                )
+                for chunk, vector in zip(batch_chunks, vectors)
+            ]
+            self.client.upsert(collection_name=COLLECTION, points=points)
+
+            if end % 2000 == 0 or end == total:
+                print(
+                    f"  embedded {end}/{total} chunks",
+                    file=sys.stderr,
+                )
 
     def search_similar(self, query: str, limit: int = 10) -> list[dict]:
         """Find code chunks semantically similar to a query."""

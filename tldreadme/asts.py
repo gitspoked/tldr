@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+import json
+import subprocess
 import sys
 import warnings
 
@@ -93,8 +95,9 @@ LANG_MAP = {
     ".kt": "kotlin",
     ".lua": "lua",
     ".zig": "zig",
-    ".json": "json",
-    ".md": "markdown",
+    # .json and .md omitted — tree-sitter parses them but they yield no
+    # useful symbols, and the markdown grammar crashes on many real-world
+    # files (C-level abort in scanner.cc).
 }
 
 
@@ -104,8 +107,8 @@ def detect_language(path: Path) -> Optional[str]:
     return LANG_MAP.get(path.suffix.lower())
 
 
-def parse_file(path: Path) -> ParseResult | None:
-    """Parse a single file and extract all symbols, imports, and calls."""
+def _parse_file_inprocess(path: Path) -> ParseResult | None:
+    """Parse a single file in the current process. May crash on bad C grammars."""
 
     lang = detect_language(path)
     if not lang:
@@ -141,24 +144,212 @@ def parse_file(path: Path) -> ParseResult | None:
     )
 
 
+# Subprocess wrapper — parses a batch of files (one per line on stdin) and
+# writes one JSON object per line to stdout.  If the C grammar crashes,
+# the whole batch dies — the caller retries the batch file-by-file.
+_PARSE_BATCH_SCRIPT = '''
+import json, sys
+from pathlib import Path
+sys.path.insert(0, {pkg_parent!r})
+from tldreadme.asts import _parse_file_inprocess
+
+def _serialize(result):
+    return {{
+        "file": result.file,
+        "language": result.language,
+        "line_count": result.line_count,
+        "symbols": [
+            {{"name": s.name, "kind": s.kind, "file": s.file, "line": s.line,
+              "end_line": s.end_line, "body": s.body, "signature": s.signature,
+              "docstring": s.docstring, "parent": s.parent, "language": s.language}}
+            for s in result.symbols
+        ],
+        "imports": [
+            {{"source": i.source, "target": i.target, "file": i.file, "line": i.line}}
+            for i in result.imports
+        ],
+        "calls": [
+            {{"caller": c.caller, "callee": c.callee, "file": c.file,
+              "line": c.line, "arguments": c.arguments}}
+            for c in result.calls
+        ],
+    }}
+
+for line in sys.stdin:
+    fpath = line.strip()
+    if not fpath:
+        continue
+    result = _parse_file_inprocess(Path(fpath))
+    if result is not None and result.symbols:
+        sys.stdout.write(json.dumps(_serialize(result)) + "\\n")
+        sys.stdout.flush()
+'''
+
+
+def _result_from_json(data: dict, raw_source: str) -> ParseResult:
+    """Reconstruct a ParseResult from JSON dict."""
+
+    return ParseResult(
+        file=data["file"],
+        language=data["language"],
+        symbols=[
+            Symbol(
+                name=s["name"], kind=s["kind"], file=s["file"], line=s["line"],
+                end_line=s["end_line"], body=s["body"], signature=s["signature"],
+                docstring=s.get("docstring"), parent=s.get("parent"),
+                language=s.get("language", ""),
+            )
+            for s in data["symbols"]
+        ],
+        imports=[
+            Import(source=i["source"], target=i["target"], file=i["file"], line=i["line"])
+            for i in data["imports"]
+        ],
+        calls=[
+            CallSite(
+                caller=c["caller"], callee=c["callee"], file=c["file"],
+                line=c["line"], arguments=c.get("arguments", []),
+            )
+            for c in data["calls"]
+        ],
+        raw_source=raw_source,
+        line_count=data["line_count"],
+    )
+
+
+def _pkg_parent() -> str:
+    return str(Path(__file__).resolve().parent.parent)
+
+
+def _parse_batch_isolated(
+    paths: list[Path],
+    timeout: int = 120,
+) -> tuple[list[ParseResult], list[Path]]:
+    """Parse a batch of files in a subprocess.
+
+    Returns (results, crashed_files).  If the subprocess crashes, all
+    files in the batch are returned as crashed_files for individual retry.
+    """
+
+    if not paths:
+        return [], []
+
+    script = _PARSE_BATCH_SCRIPT.format(pkg_parent=_pkg_parent())
+    stdin_data = "\n".join(str(p) for p in paths) + "\n"
+
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            input=stdin_data,
+            capture_output=True,
+            timeout=timeout,
+            text=True,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"WARN: batch parse timed out ({len(paths)} files)", file=sys.stderr)
+        return [], list(paths)
+
+    if proc.returncode != 0:
+        # Subprocess crashed — all files need individual retry
+        return [], list(paths)
+
+    results = []
+    for line in proc.stdout.strip().splitlines():
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line)
+            try:
+                raw_source = Path(data["file"]).read_text(errors="replace")
+            except (OSError, UnicodeDecodeError):
+                raw_source = ""
+            results.append(_result_from_json(data, raw_source))
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    return results, []
+
+
+def parse_file(path: Path, timeout: int = 30, isolate: bool = True) -> ParseResult | None:
+    """Parse a single file with optional subprocess isolation.
+
+    When isolate=True (default), tree-sitter runs in a child process so
+    C-level crashes (abort/SIGABRT) only kill the child — the pipeline
+    survives and logs a warning.
+    """
+
+    lang = detect_language(path)
+    if not lang:
+        return None
+
+    if not isolate:
+        return _parse_file_inprocess(path)
+
+    results, crashed = _parse_batch_isolated([path], timeout=timeout)
+    if crashed:
+        print(f"WARN: parser crashed, skipping: {path}", file=sys.stderr)
+        return None
+    return results[0] if results else None
+
+
+_BATCH_SIZE = 100
+
+
 def parse_directory(
     root: Path,
     exclude: Optional[set] = None,
     follow_symlinks: bool = False,
 ) -> list[ParseResult]:
-    """Recursively parse all supported source files in a directory."""
+    """Recursively parse all supported source files in a directory.
+
+    Files are parsed in subprocess batches of ~100.  If a batch crashes
+    (C-level abort), files in that batch are retried one-by-one to
+    isolate the bad file and recover the rest.
+    """
 
     if exclude is None:
         exclude = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build"}
 
-    results = []
+    # Collect candidate files
+    candidates = []
     for path in root.rglob("*"):
         if not follow_symlinks and path.is_symlink():
             continue
         if path.is_file() and not any(ex in path.parts for ex in exclude):
-            result = parse_file(path)
-            if result and result.symbols:
-                results.append(result)
+            if detect_language(path):
+                candidates.append(path)
+
+    results = []
+    skipped = 0
+
+    # Process in batches
+    for i in range(0, len(candidates), _BATCH_SIZE):
+        batch = candidates[i : i + _BATCH_SIZE]
+        batch_results, crashed_files = _parse_batch_isolated(batch, timeout=120)
+        results.extend(batch_results)
+
+        # Retry crashed batch file-by-file
+        if crashed_files:
+            print(
+                f"WARN: batch crashed, retrying {len(crashed_files)} files individually...",
+                file=sys.stderr,
+            )
+            for path in crashed_files:
+                file_results, file_crashed = _parse_batch_isolated([path], timeout=30)
+                if file_crashed:
+                    print(f"WARN: parser crashed, skipping: {path}", file=sys.stderr)
+                    skipped += 1
+                else:
+                    results.extend(file_results)
+
+        # Progress indicator
+        done = min(i + _BATCH_SIZE, len(candidates))
+        if done % 500 == 0 or done == len(candidates):
+            print(f"  parsed {done}/{len(candidates)} files ({len(results)} with symbols)", file=sys.stderr)
+
+    if skipped:
+        print(f"WARN: {skipped} file(s) skipped due to parser crashes", file=sys.stderr)
+
     return results
 
 
