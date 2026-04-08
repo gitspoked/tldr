@@ -9,6 +9,10 @@ Create an environment with `python3.12 -m venv .venv` and install locally with `
 - `python -m pytest -q` runs the full test suite.
 - `python -m pytest tests/test_cli.py -q` runs a focused test file.
 - `.venv/bin/python -m tldreadme --help` checks the module entry point.
+- `.venv/bin/tldr /path/to/project` or `.venv/bin/tldr peek /path/to/project` runs zero-infrastructure reconnaissance (no Qdrant/FalkorDB required).
+- `.venv/bin/tldr peek /path/to/file.py` inspects a single file: line count, extension, and symbol list.
+- `.venv/bin/tldr peek /path --json-output` emits the raw enrichment dict for piping or agent consumption.
+- `.venv/bin/tldr peek /path --markdown` emits GitHub-flavoured Markdown suitable for embedding in issues or docs.
 - `.venv/bin/tldr init /path/to/project` rebuilds the index and `.claude/TLDR*.md`.
 - `.venv/bin/tldr serve` starts the stdio MCP server; `.venv/bin/tldr serve --transport sse -p 8900` starts the SSE transport.
 - `.venv/bin/tldr watch /path/to/project` enables incremental updates.

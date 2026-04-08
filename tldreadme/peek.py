@@ -1,9 +1,43 @@
-"""Peek module: zero-infrastructure reconnaissance of a file or directory.
+"""Zero-infrastructure codebase reconnaissance.
 
-Layer 0 — filesystem scan (disk stats, extension breakdown, line counts).
-Layer 1 — context docs (README, CLAUDE.md, etc.) and manifest detection.
-Layer 2 — indexed knowledge (.tldr/ hot index, generated summary).
-Layer 3 — live services (Qdrant semantic search, FalkorDB call graph).
+peek_target(path) inspects any file or directory through layered enrichment,
+returning a structured dict that works whether the target is indexed or not.
+
+Layered enrichment model
+------------------------
+Layer 0 — Filesystem scan (always runs):
+    Walk the directory tree (max depth 3, symlinks skipped, noise dirs excluded).
+    For directories: file count by extension, total line count.
+    For files: line count, extension, symbol extraction via tree-sitter (with
+    regex fallback). Files over 1MB skip symbol extraction.
+
+Layer 1 — Context docs (always runs):
+    scan_context_docs() finds README.md, CLAUDE.md, AGENTS.md, CODEX.md,
+    GEMINI.md, etc. from the target or its nearest project root.
+    extract_deps_from_directory() detects project name/version from
+    pyproject.toml, package.json, Cargo.toml, go.mod, setup.py.
+
+Layer 2 — Indexed knowledge (runs if .tldr/ exists):
+    Loads hot_index.json (top 20 symbols by importance heuristic).
+    Reads .claude/TLDR.md as a pre-generated summary.
+
+Layer 3 — Live services (runs if services respond within 1s):
+    Raw HTTP GET to Qdrant /collections — if 200, uses get_embedder() for
+    semantic neighbor search. Raw TCP PING to FalkorDB — if PONG, uses
+    get_grapher() for call-graph neighbors. Both use 1-second timeouts and
+    skip gracefully on failure; never instantiates CodeEmbedder/CodeGrapher
+    eagerly (their __init__ connects).
+
+Public API
+----------
+peek_target(path)           Main entry. Returns the enrichment dict.
+render_peek(result)         Compact terminal output with ruled sections.
+render_peek_markdown(result) Markdown with headings and tables.
+peek_to_router_result(r)    Maps peek dict to MCP router contract shape.
+
+The returned dict always contains all keys so callers need no defensive
+.get() calls: path, type, project, stats, context_docs, symbols, indexed,
+generated_summary, hot_symbols, related, enrichment_layers, fallback_used.
 """
 
 from __future__ import annotations
@@ -66,8 +100,24 @@ _KIND_PATTERNS = {
 def peek_target(path: Path | str) -> Dict[str, Any]:
     """Inspect *path* and return a structured reconnaissance dict.
 
-    The returned dict always contains the keys listed in the spec so callers
-    can rely on them without defensive get() checks.
+    Runs all four enrichment layers in sequence, stopping each gracefully
+    on error. The result always contains every documented key regardless
+    of which layers fired.
+
+    Args:
+        path: File or directory to inspect. Resolved to an absolute path.
+
+    Returns:
+        dict with keys: path, type, project, stats, context_docs, symbols,
+        indexed, generated_summary, hot_symbols, related,
+        enrichment_layers (list[str]), fallback_used (list[str]).
+
+        enrichment_layers records which layers ran: "disk" is always first,
+        then "context_docs" if any docs were found, "tldr" if .tldr/ exists,
+        "qdrant"/"falkordb" if live services responded.
+
+        fallback_used records skipped steps and why, e.g.
+        ["qdrant_unavailable", "hot_index_read_failed"].
     """
     target = Path(path).resolve()
 
@@ -157,10 +207,7 @@ def peek_target(path: Path | str) -> Dict[str, Any]:
 
 
 def _walk_limited(root: Path, max_depth: int = MAX_SCAN_DEPTH) -> Iterator[Path]:
-    """Yield file paths under *root*, honouring *max_depth* and skipping noise.
-
-    Symlinks and SKIP_DIRS directories are skipped entirely.
-    """
+    """Yield file paths under *root* up to *max_depth* levels, skipping noise dirs and symlinks."""
     def _recurse(directory: Path, current_depth: int) -> Iterator[Path]:
         if current_depth > max_depth:
             return
@@ -182,12 +229,7 @@ def _walk_limited(root: Path, max_depth: int = MAX_SCAN_DEPTH) -> Iterator[Path]
 
 
 def _count_lines(file_path: Path) -> int:
-    """Return the number of newline-delimited lines in *file_path*.
-
-    Counts lines for all readable files, using a streaming approach for
-    files over MAX_FILE_SIZE to avoid loading them fully into memory.
-    Returns 0 for files that cannot be read.
-    """
+    """Count newline-terminated lines in *file_path*; returns 0 for files over MAX_FILE_SIZE or on read error."""
     try:
         size = file_path.stat().st_size
         if size > MAX_FILE_SIZE:
@@ -204,7 +246,7 @@ def _count_lines(file_path: Path) -> int:
 
 
 def _scan_directory(target: Path) -> Dict[str, Any]:
-    """Walk *target* and collect file/line/extension stats."""
+    """Layer 0 directory scan: walk tree and accumulate file count, line count, extension histogram."""
     file_count = 0
     line_count = 0
     extensions: Dict[str, int] = {}
@@ -224,10 +266,7 @@ def _scan_directory(target: Path) -> Dict[str, Any]:
 
 
 def _scan_file(target: Path) -> tuple[Dict[str, Any], list[dict]]:
-    """Collect basic stats and symbols for a single *target* file.
-
-    Returns ``(stats, symbols)``.
-    """
+    """Layer 0 file scan: measure size, count lines, detect extension, extract symbols."""
     ext = target.suffix.lstrip(".")
     lines = _count_lines(target)
     size = 0
@@ -252,7 +291,7 @@ def _scan_file(target: Path) -> tuple[Dict[str, Any], list[dict]]:
 
 
 def _extract_symbols_regex(text: str) -> list[dict]:
-    """Extract symbols from source text using regex patterns."""
+    """Regex-based symbol extraction for Python/Rust/Go/JS/TS/Java; returns list of {name, kind, line} dicts."""
     symbols: list[dict] = []
     for i, line in enumerate(text.splitlines(), 1):
         for pattern in _SYMBOL_PATTERNS:
@@ -270,7 +309,7 @@ def _extract_symbols_regex(text: str) -> list[dict]:
 
 
 def _extract_symbols(target: Path) -> list[dict]:
-    """Extract symbols from *target* file, using tree-sitter if available."""
+    """Extract named symbols from *target*; tries tree-sitter first, regex fallback, returns [] for files over 1MB."""
     if target.stat().st_size > MAX_FILE_SIZE:
         return []
     try:
@@ -293,7 +332,7 @@ def _extract_symbols(target: Path) -> list[dict]:
 
 
 def _find_project_root(directory: Path) -> Path:
-    """Walk up the directory tree to find the project root (manifest file)."""
+    """Walk up from *directory* to the nearest ancestor containing a project manifest file."""
     manifest_names = {"Cargo.toml", "package.json", "go.mod", "pyproject.toml", "setup.py"}
     current = directory
     while current != current.parent:
@@ -304,7 +343,7 @@ def _find_project_root(directory: Path) -> Path:
 
 
 def _enrich_context_docs(target: Path) -> tuple[list[dict], dict | None]:
-    """Scan for context docs and manifest info relative to *target*."""
+    """Layer 1: scan context docs and detect project from the nearest manifest."""
     from .context_docs import scan_context_docs
     from .deps import extract_deps_from_directory
 
@@ -349,7 +388,7 @@ def _enrich_live_services(
     enrichment_layers: list[str],
     fallback_used: list[str],
 ) -> None:
-    """Probe Qdrant and FalkorDB; populate related symbols if reachable."""
+    """Layer 3: opportunistically query Qdrant and FalkorDB if they respond within 1s."""
     import os
 
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
@@ -414,7 +453,21 @@ def _enrich_live_services(
 
 
 def render_peek(result: dict) -> str:
-    """Render a peek result as a compact terminal-friendly string."""
+    """Render *result* as compact terminal output.
+
+    Produces plain-text output with ruled section headers, suitable for
+    display in a terminal or Claude Code's output pane. No Rich/ANSI
+    dependencies — output is plain text that reads well at any width.
+
+    Sections (each only shown when data is present):
+        Header: project name + manifest, version, file count, line count,
+                extension breakdown.
+        What It Is: first README paragraph (<=200 chars).
+        Context Docs: non-README context docs with one-line summaries.
+        Defines: symbol list (file mode only, <=15 symbols).
+        Indexed?: .tldr/ presence, hot symbol count, Qdrant/FalkorDB status.
+        Related: graph/semantic neighbors from Layer 3 (<=10 entries).
+    """
     lines: list[str] = []
     path = Path(result["path"])
     project = result.get("project")
@@ -497,7 +550,19 @@ def render_peek(result: dict) -> str:
 
 
 def render_peek_markdown(result: dict) -> str:
-    """Render a peek result as a Markdown document."""
+    """Render *result* as GitHub-flavoured Markdown.
+
+    Suitable for piping into files, embedding in issues, or passing to
+    agents that process markdown. Uses heading levels, bold labels,
+    extension code-spans, and a symbol table.
+
+    Structure:
+        # project-name-or-directory-name
+        Stats line (files, lines, extension breakdown)
+        ## Context  — context docs as bullet list
+        ## Symbols  — markdown table (kind | name | line)
+        ## Status   — indexed flag, enrichment layers, fallbacks
+    """
     lines: list[str] = []
     path = Path(result["path"])
     project = result.get("project")
@@ -558,7 +623,21 @@ def render_peek_markdown(result: dict) -> str:
 
 
 def peek_to_router_result(peek_result: dict) -> dict:
-    """Map a peek result to the standard MCP router result shape."""
+    """Map a peek result to the MCP router contract shape.
+
+    Normalises the peek dict into the standard keys that router tools
+    (repo_lookup, repo_next_action, etc.) return, so consumers don't need
+    to know whether the result came from an indexed query or a raw peek.
+
+    Confidence tiers:
+        0.5 — layers 0-1 only (filesystem + context docs)
+        0.7 — layer 2 present (.tldr/ indexed knowledge)
+        0.9 — layer 3 present (Qdrant or FalkorDB responded)
+
+    Returns:
+        dict with keys: summary, confidence, evidence,
+        recommended_next_action, fallback_used, peek (the raw peek dict).
+    """
     layers = peek_result.get("enrichment_layers", [])
     context_docs = peek_result.get("context_docs", [])
     project = peek_result.get("project")
