@@ -277,3 +277,52 @@ def test_peek_to_router_result_indexed(tmp_path):
     router_result = peek_to_router_result(peek_result)
 
     assert router_result["confidence"] >= 0.7
+
+
+# ---------------------------------------------------------------------------
+# Task 9: CLI wiring
+# ---------------------------------------------------------------------------
+
+import json as _json_cli  # noqa: avoid conflict with earlier import
+
+from click.testing import CliRunner
+from tldreadme.cli import main as cli_main
+
+
+def test_cli_peek_explicit(tmp_path):
+    """tldr peek <dir> works as an explicit command."""
+    (tmp_path / "main.py").write_text("x = 1\n")
+    runner = CliRunner()
+    result = runner.invoke(cli_main, ["peek", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "files" in result.output or "main.py" in result.output
+
+
+def test_cli_peek_json(tmp_path):
+    """tldr peek --json-output produces valid JSON."""
+    (tmp_path / "main.py").write_text("x = 1\n")
+    runner = CliRunner()
+    result = runner.invoke(cli_main, ["peek", str(tmp_path), "--json-output"])
+    assert result.exit_code == 0, result.output
+    data = _json_cli.loads(result.output)
+    assert data["type"] == "directory"
+
+
+def test_cli_bare_path_invokes_peek(tmp_path):
+    """tldr <dir> (no subcommand) invokes peek, not init."""
+    (tmp_path / "main.py").write_text("x = 1\n")
+    runner = CliRunner()
+    result = runner.invoke(cli_main, [str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "Indexing directory" not in result.output
+    assert "files" in result.output or "Indexed?" in result.output
+
+
+def test_cli_bare_file_invokes_peek(tmp_path):
+    """tldr <file> (no subcommand) invokes peek for files too."""
+    py_file = tmp_path / "example.py"
+    py_file.write_text("def hello():\n    pass\n")
+    runner = CliRunner()
+    result = runner.invoke(cli_main, [str(py_file)])
+    assert result.exit_code == 0, result.output
+    assert "example.py" in result.output
