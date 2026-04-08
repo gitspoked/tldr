@@ -21,8 +21,9 @@ Handles both files and directories. Detects target type and builds a result dict
 
 **Layer 0 — Filesystem scan (always runs):**
 - File vs directory detection
-- For directories: file count by extension, total lines, manifest detection (project type/name/version) via `deps.extract_deps_from_directory()`
-- For files: language detection by extension, line count, symbol extraction (tree-sitter parse if available, regex fallback for function/class definitions)
+- For directories: file count by extension, total lines, manifest detection (project type/name/version) via `deps.extract_deps_from_directory()`. Scan depth limited to 3 levels for peek speed. Symlinks are not followed (matching existing defaults).
+- For files: language detection by extension, line count, symbol extraction (tree-sitter `parse_file` with `isolate=False` for speed, regex fallback for function/class definitions). Files over 1MB skip tree-sitter — only line count and extension are reported.
+- For monorepos with multiple manifests: the nearest manifest to the target path is used as the primary `project` entry. Additional manifests are noted in `stats`.
 
 **Layer 1 — Context docs (always runs):**
 - `context_docs.scan_context_docs()` from the target or its project root
@@ -35,8 +36,8 @@ Handles both files and directories. Detects target type and builds a result dict
 - Check `.tldr/work/` for any plans
 
 **Layer 3 — Live enrichment (if services respond):**
-- Quick Qdrant ping (1s timeout) — if up, semantic search for related symbols
-- Quick FalkorDB ping (1s timeout) — if up, graph neighbors (callers/callees/imports)
+- Raw HTTP GET to `QDRANT_URL/collections` (1s timeout) to check availability — do NOT instantiate `CodeEmbedder` (its `__init__` eagerly calls `_ensure_collection`). If Qdrant responds, use `_shared.get_embedder()` for semantic search.
+- Raw Redis PING to `FALKORDB_URL` (1s timeout) to check availability — do NOT instantiate `CodeGrapher` (its `__init__` eagerly creates indexes). If FalkorDB responds, use `_shared.get_grapher()` for graph neighbors.
 - Graceful skip on timeout or connection refused — no crash, just note in `fallback_used`
 
 ### Return Shape
@@ -84,7 +85,7 @@ tldr init <path>     -> full indexing pipeline (unchanged)
 tldr peek <path>     -> explicit peek (same as bare path)
 ```
 
-The `main()` group handler in `cli.py` (lines 20-33) changes from `ctx.invoke(init, ...)` to `ctx.invoke(peek, ...)`.
+The `main()` group handler in `cli.py` (lines 20-33) changes from `ctx.invoke(init, ...)` to `ctx.invoke(peek, ...)`. The `os.path.isdir()` guard is replaced with `os.path.exists()` so both files and directories route to peek. The stale `__main__` block at lines 635-647 is removed entirely — Click's `invoke_without_command` already handles the dispatch.
 
 ### Command definition
 
@@ -112,7 +113,15 @@ def peek(path: str, json_output: bool, markdown: bool):
 
 No new MCP tools. No new resources. `repo_lookup` gets smarter about unindexed targets.
 
-The return dict follows the existing router contract: `summary`, `confidence`, `evidence`, `recommended_next_action`, `fallback_used` keys are present or derivable.
+### Router contract mapping
+
+`peek_target()` returns domain-specific keys. A translation function `peek_to_router_result(peek_dict)` maps to the router contract:
+
+- `summary`: First context doc summary (README preferred), or `"{project_name}: {stats.files} files, {stats.lines} lines"` fallback
+- `confidence`: 0.5 for layers 0-1 only, 0.7 if layer 2 present, 0.9 if layer 3 present
+- `evidence`: list built from `enrichment_layers` — e.g. `["scanned 47 files", "found CLAUDE.md", "hot index: 87 symbols"]`
+- `recommended_next_action`: `"Run tldr init <path> for full indexing"` when layers 2-3 missing, or `"Codebase fully indexed"` when all layers present
+- `fallback_used`: passed through directly from peek dict
 
 ## Rendering
 
@@ -176,7 +185,7 @@ Heavy imports are deferred behind try/except or conditional checks:
 - `asts.parse_file` — only for file mode symbol extraction, with regex fallback
 - `embedder.CodeEmbedder` — only in layer 3, inside try/except
 - `grapher.CodeGrapher` — only in layer 3, inside try/except
-- `hot_index.HotIndex` — only in layer 2, reading a JSON file
+- `hot_index.HotIndex.load()` — only in layer 2, classmethod that reads and deserializes `.tldr/hot_index.json`
 
 No top-level dependency on Qdrant, FalkorDB, Ollama, or LiteLLM.
 
@@ -203,7 +212,7 @@ No mocking of external services. Tests run fully offline against temp directorie
 - CLAUDE.md CLI section update
 
 **Out of scope:**
-- Fixing `tldr ask -d` scope filtering (separate issue, noted)
+- Fixing `tldr ask -d` scope filtering (tracked as future enhancement — peek creates the directory-scoped context that `ask -d` needs)
 - New MCP resources or tools
 - Changes to the init pipeline
 - Changes to existing rendering in other commands
