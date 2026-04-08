@@ -87,7 +87,12 @@ Source files
 
 ### Key Modules
 
-- **peek.py** — Zero-infrastructure reconnaissance. `peek_target(path)` scans any file or directory with layered enrichment: filesystem stats → context docs → `.tldr/` indexed knowledge → live Qdrant/FalkorDB queries. Returns a structured dict. `render_peek()` formats for CLI, `render_peek_markdown()` for piping, `peek_to_router_result()` maps to the MCP router contract.
+- **peek.py** — Zero-infrastructure reconnaissance. `peek_target(path)` scans any file or directory through four enrichment layers:
+  - **Layer 0** (always): depth-limited walk (max 3 levels), file/line/extension stats. Files over 1MB skip symbol extraction.
+  - **Layer 1** (always): `scan_context_docs()` + `extract_deps_from_directory()` for README/CLAUDE.md/etc. and manifest-based project detection.
+  - **Layer 2** (if `.tldr/` exists): hot index top symbols + `.claude/TLDR.md` generated summary.
+  - **Layer 3** (if services respond within 1s): raw HTTP ping to Qdrant, TCP PING to FalkorDB — no eager constructor calls.
+  Returns a dict with `enrichment_layers` (list of fired layers) and `fallback_used` (list of skipped steps). `render_peek()` formats for CLI, `render_peek_markdown()` for piping/agents, `peek_to_router_result()` maps to the MCP router contract (confidence 0.5→0.7→0.9 by layer depth).
 - **parser.py** — Compatibility facade. Re-exports AST parsing, dependency extraction, and context-doc scanning from the split modules. Do not bypass it; new parsing behavior goes into the split modules.
 - **asts.py** — Tree-sitter AST extraction. Produces `ParseResult`, `Symbol`, `Import`, and `CallSite` dataclasses.
 - **deps.py** — Manifest dependency extraction from Cargo.toml, package.json, go.mod, pyproject.toml, and requirements.txt.
@@ -119,6 +124,7 @@ Source files
 - **tree-sitter pinning**: `tree-sitter==0.21.3` and `tree-sitter-languages==1.10.2` are pinned — newer versions break compatibility.
 - **Audit scanner fallback**: Each category has a preferred local scanner and fallback chain. `--prefer-snyk` overrides with authenticated Snyk CLI. Scanners are detected at runtime via `runtime.audit_tool_checks()`.
 - **OWASP policy profiles**: `owasp-web`, `owasp-api`, `owasp-llm`, `owasp-mcp` — each maps to recommended categories and focus areas. Not enforcement; guidance for interpreting scan results.
+- **peek layer isolation**: `peek.py` imports `context_docs` and `deps` at the top level only. `asts`, `hot_index`, `embedder`, `grapher`, and `_shared` are imported inside try/except blocks, deferred until their layer fires. Layer 3 uses raw TCP/HTTP probes instead of constructing `CodeEmbedder`/`CodeGrapher` — their `__init__` eagerly connects and would fail or hang if services are down.
 
 ## MCP Surface
 
