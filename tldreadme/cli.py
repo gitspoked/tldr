@@ -2,16 +2,33 @@
 
 import click
 import json
+import os
 from pathlib import Path
 import sys
 
 AUDIT_PROFILE_CHOICES = ["owasp-web", "owasp-api", "owasp-llm", "owasp-mcp"]
 
 
-@click.group()
-def main():
+class _PathFallbackGroup(click.Group):
+    """click.Group that falls through to `peek` when the first arg is an existing path."""
+
+    def parse_args(self, ctx, args):
+        # If the first argument looks like an existing path and is not a known
+        # subcommand, rewrite the argv so Click sees "peek <path>" instead.
+        if args and os.path.exists(args[0]) and args[0] not in self.commands:
+            args = ["peek"] + list(args)
+        return super().parse_args(ctx, args)
+
+
+@click.group(
+    cls=_PathFallbackGroup,
+    invoke_without_command=True,
+)
+@click.pass_context
+def main(ctx):
     """TLDREADME — TL;DR for any codebase."""
-    pass
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
 @main.command()
@@ -29,6 +46,23 @@ def init(directory: str, output: str):
 
     ensure_tree_sitter_runtime()
     run_init(Path(directory), output_dir=output)
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--json-output", is_flag=True, help="Print the raw peek payload as JSON.")
+@click.option("--markdown", is_flag=True, help="Render output as markdown.")
+def peek(path: str, json_output: bool, markdown: bool):
+    """Quick reconnaissance of a directory or file — no indexing required."""
+    from .peek import peek_target, render_peek, render_peek_markdown
+
+    result = peek_target(path)
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+    elif markdown:
+        click.echo(render_peek_markdown(result))
+    else:
+        click.echo(render_peek(result))
 
 
 @main.command()
@@ -610,4 +644,4 @@ def _load_questionary():
 
 
 if __name__ == "__main__":
-    main()
+    main(prog_name="tldr")
