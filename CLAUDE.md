@@ -25,6 +25,11 @@ ollama pull qwen2.5-coder:3b-instruct
 ## CLI Commands
 
 ```bash
+tldr /path/to/code                 # peek: instant reconnaissance (no infra needed)
+tldr peek /path/to/code            # same as above (explicit subcommand)
+tldr peek /path/to/file.py         # peek at a single file
+tldr peek /path --json-output      # raw JSON for piping or agent consumption
+tldr peek /path --markdown         # markdown output for embedding
 tldr init /path/to/code           # full pipeline: parse -> embed -> graph -> generate
 tldr serve                         # MCP server (stdio, router profile)
 tldr serve --transport sse -p 8900 # MCP server over SSE
@@ -82,6 +87,7 @@ Source files
 
 ### Key Modules
 
+- **peek.py** — Zero-infrastructure reconnaissance. `peek_target(path)` scans any file or directory with layered enrichment: filesystem stats → context docs → `.tldr/` indexed knowledge → live Qdrant/FalkorDB queries. Returns a structured dict. `render_peek()` formats for CLI, `render_peek_markdown()` for piping, `peek_to_router_result()` maps to the MCP router contract.
 - **parser.py** — Compatibility facade. Re-exports AST parsing, dependency extraction, and context-doc scanning from the split modules. Do not bypass it; new parsing behavior goes into the split modules.
 - **asts.py** — Tree-sitter AST extraction. Produces `ParseResult`, `Symbol`, `Import`, and `CallSite` dataclasses.
 - **deps.py** — Manifest dependency extraction from Cargo.toml, package.json, go.mod, pyproject.toml, and requirements.txt.
