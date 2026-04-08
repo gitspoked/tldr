@@ -326,3 +326,100 @@ def test_cli_bare_file_invokes_peek(tmp_path):
     result = runner.invoke(cli_main, [str(py_file)])
     assert result.exit_code == 0, result.output
     assert "example.py" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Task 10: repo_lookup peek fallback
+# ---------------------------------------------------------------------------
+
+from tldreadme.coding_tools import repo_lookup  # noqa: E402
+
+
+def test_repo_lookup_peek_fallback(tmp_path):
+    """repo_lookup falls back to peek for unindexed directories (no Qdrant/FalkorDB)."""
+    (tmp_path / "main.py").write_text("def hello(): pass\n")
+    (tmp_path / "README.md").write_text("# Test\n\nA test project.\n")
+
+    result = repo_lookup(root=str(tmp_path))
+
+    assert "summary" in result
+    assert "confidence" in result
+    assert isinstance(result["confidence"], float)
+    assert result["confidence"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Task 12: Full integration test
+# ---------------------------------------------------------------------------
+
+from tldreadme.peek import render_peek, render_peek_markdown, peek_to_router_result  # noqa: E402
+
+
+def test_peek_full_integration(tmp_path):
+    """End-to-end: directory with manifest, docs, .tldr/, rendering, and router mapping."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "test-project"\nversion = "1.2.3"\n'
+        'dependencies = ["click", "rich"]\n'
+    )
+    (tmp_path / "README.md").write_text("# Test Project\n\nA project for testing peek.\n")
+    (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\n## Architecture\n\nSimple design.\n")
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "main.py").write_text(
+        "class App:\n"
+        "    def run(self):\n"
+        "        pass\n"
+        "\n"
+        "def create_app():\n"
+        "    return App()\n"
+    )
+    (src / "utils.py").write_text("def helper():\n    return 42\n")
+
+    tldr_dir = tmp_path / ".tldr"
+    tldr_dir.mkdir()
+    (tldr_dir / "hot_index.json").write_text(_json.dumps({
+        "root": str(tmp_path),
+        "top_files": ["src/main.py"],
+        "entries": {
+            "App": {
+                "name": "App", "kind": "class", "importance": 0.95,
+                "hit_count": 10,
+                "locations": [{"file": "src/main.py", "line": 1, "context": "class App:"}],
+            },
+        },
+    }))
+
+    result = peek_target(tmp_path)
+
+    # Layer 0
+    assert result["type"] == "directory"
+    assert result["stats"]["files"] >= 4
+    assert "py" in result["stats"]["extensions"]
+
+    # Layer 1
+    assert "context_docs" in result["enrichment_layers"]
+    kinds = [d["kind"] for d in result["context_docs"]]
+    assert "readme" in kinds
+    assert "claude" in kinds
+    assert result["project"]["name"] == "test-project"
+    assert result["project"]["version"] == "1.2.3"
+
+    # Layer 2
+    assert result["indexed"] is True
+    assert "tldr" in result["enrichment_layers"]
+    assert any(s["name"] == "App" for s in result["hot_symbols"])
+
+    # Rendering
+    output = render_peek(result)
+    assert "test-project" in output
+    assert "1.2.3" in output
+
+    md = render_peek_markdown(result)
+    assert md.startswith("#")
+    assert "test-project" in md
+
+    # Router mapping
+    router = peek_to_router_result(result)
+    assert router["confidence"] >= 0.7
+    assert len(router["evidence"]) > 0

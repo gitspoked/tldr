@@ -1607,7 +1607,23 @@ def repo_lookup(
         )
 
     if result is None:
-        result = scan_context(root=str(repo_root), scope=lookup_scope, limit=limit)
+        try:
+            from .peek import peek_target, peek_to_router_result
+            peek_result = peek_target(repo_root)
+            router = peek_to_router_result(peek_result)
+            result = _preferred_result(
+                summary=router["summary"],
+                confidence=router["confidence"],
+                evidence=router["evidence"],
+                recommended_next_action=router["recommended_next_action"],
+                fallback_used=router["fallback_used"] + ["peek"],
+                verification_commands=[f"tldr init {repo_root}"],
+                peek=router.get("peek"),
+            )
+            fallback_used.append("peek")
+        except Exception:
+            result = scan_context(root=str(repo_root), scope=lookup_scope, limit=limit)
+            fallback_used.append("peek_unavailable")
 
     payload = dict(result)
     specialist_next_tool = payload.get("next_best_tool")
