@@ -15,7 +15,7 @@ CHILDREN_DOCUMENT_TYPE = "tldreadme/children_registry"
 
 ChildStatus = Literal["unknown", "merged", "ignored"]
 
-IGNORED_CHILD_PARTS = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr"}
+IGNORED_CHILD_PARTS = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr", ".claude"}
 MANIFEST_FILES = {
     "Cargo.toml",
     "go.mod",

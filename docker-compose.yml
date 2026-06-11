@@ -6,12 +6,12 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "6633:6333"
+      - "6634:6334"
     volumes:
       - ./.tldr/qdrant:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:6633/healthz"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -19,7 +19,7 @@ services:
   falkordb:
     image: falkordb/falkordb:latest
     ports:
-      - "6379:6379"
+      - "6397:6379"
     volumes:
       - ./.tldr/falkordb:/data
     command: >
@@ -27,7 +27,7 @@ services:
       --maxmemory-policy allkeys-lru
       --loadmodule /usr/lib/redis/modules/falkordb.so
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3

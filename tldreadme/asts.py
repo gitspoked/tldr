@@ -308,7 +308,7 @@ def parse_directory(
     """
 
     if exclude is None:
-        exclude = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build"}
+        exclude = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr", ".claude"}
 
     # Collect candidate files
     candidates = []
