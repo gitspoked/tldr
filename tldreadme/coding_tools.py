@@ -7,7 +7,7 @@ import subprocess
 from .parser import LANG_MAP, parse_file, scan_context_docs
 from .search import rg_files, rg_search
 
-IGNORED_SCAN_PARTS = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build"}
+IGNORED_SCAN_PARTS = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr", ".claude"}
 ROUTER_CONTRACT_VERSION = 1
 PREFERRED_RESULT_KEYS = (
     "tool_contract_version",
