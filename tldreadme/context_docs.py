@@ -49,6 +49,20 @@ CONTEXT_DOC_NAMES = {
 }
 
 
+def _passes_exclude(path: Path, exclude: set) -> bool:
+    """True if the path clears the exclusion set.
+
+    .tldr/roadmap/TLDRPLANS.md is the one human-curated doc under .tldr/,
+    so the .tldr exclusion does not apply to it; any other excluded
+    directory on the path still does.
+    """
+
+    parts = path.parts
+    if path.name.lower() == "tldrplans.md" and parts[-3:-1] == (".tldr", "roadmap"):
+        parts = parts[:-3]
+    return not any(ex in parts for ex in exclude)
+
+
 def scan_context_docs(
     root: Path,
     exclude: Optional[set] = None,
@@ -63,7 +77,7 @@ def scan_context_docs(
     for path in root.rglob("*.md"):
         if not follow_symlinks and path.is_symlink():
             continue
-        if any(ex in path.parts for ex in exclude):
+        if not _passes_exclude(path, exclude):
             continue
 
         name = path.name
