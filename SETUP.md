@@ -57,8 +57,8 @@ Total: ~2.2GB. Runs on any machine with 4GB+ free RAM.
 ## Step 3: Clone and Install
 
 ```bash
-git clone https://github.com/ntele-dev/tldreadme.git
-cd tldreadme
+git clone https://github.com/gitspoked/tldr.git
+cd tldr
 python3.12 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e '.[dev]'

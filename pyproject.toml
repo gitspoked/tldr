@@ -1,7 +1,7 @@
 [project]
 name = "tldreadme"
 authors = [
-    { name = "Matt Klein", email = "mk@ntele.net" },
+    { name = "Matt Klein", email = "247545230+gitspoked@users.noreply.github.com" },
 ]
 version = "0.1.2"
 description = "TLDReadme.md: TL;DR for any codebase. Think gemini, codex, claude-code's /init. With tree-sitter AST w/ Qdrant vectors & FalkorDB graphs for coder context and RAG production. Built in MCP server that makes LLMs KNOW your code. Context Tree Walker for README.md CONTEXT.md, CLAUDE.md and other Markdown files producing exhaustive concise detail, you choose level for Documentation, Agentic Knowledge, SKILLS and the Coupling of Code with Context for LLM's [local-first, remote-next], and in JIT mode, etc."

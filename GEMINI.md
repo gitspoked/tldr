@@ -20,8 +20,8 @@ The project uses Python 3.11+ and Docker.
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/ntele-dev/tldreadme.git
-    cd tldreadme
+    git clone https://github.com/gitspoked/tldr.git
+    cd tldr
     ```
 2.  Create and activate a virtual environment:
     ```bash
