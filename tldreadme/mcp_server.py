@@ -850,7 +850,7 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 name="read_depends",
                 description=(
                     "What breaks if you change this? Shows everything that depends on "
-                    "a symbol — callers, importers, transitive dependents."
+                    "a symbol - callers, importers, transitive dependents."
                 ),
                 inputSchema={
                     "type": "object",
@@ -879,7 +879,7 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 description=(
                     "TL;DR of a module, crate, or directory. RAG-powered natural language "
                     "summary: what it does, key entry points, architecture. "
-                    "The god tool — instant understanding of any part of the codebase."
+                    "The god tool - instant understanding of any part of the codebase."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1042,7 +1042,7 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="read_grep",
                 description=(
-                    "Fast text search via ripgrep. For when you know the string — "
+                    "Fast text search via ripgrep. For when you know the string - "
                     "exact identifiers, error messages, config keys, TODO/FIXME. "
                     "Returns actual code with surrounding context lines. "
                     "Complements read_similar (semantic) with exact text matching."

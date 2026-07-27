@@ -21,7 +21,7 @@ build/
 .pytest_cache/
 .claude/
 
-# Data — bulky local state lives under .tldr/, except tracked workboard plans
+# Data - bulky local state lives under .tldr/, except tracked workboard plans
 .tldr/*
 !.tldr/work/
 .tldr/work/*
@@ -33,3 +33,4 @@ build/
 *.jsonl
 *.tmp
 .serena/
+.letta/

@@ -1,4 +1,4 @@
-# LiteLLM config — for docker-compose.llm.yml (cloud providers)
+# LiteLLM config - for docker-compose.llm.yml (cloud providers)
 # Uncomment the provider you want to use, set API key in .env
 
 model_list:

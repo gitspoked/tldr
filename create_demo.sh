@@ -60,10 +60,10 @@ show_cmd() {
 
 clear
 
-banner "TLDREADME — TL;DR for any codebase"
+banner "TLDREADME - TL;DR for any codebase"
 
 echo -e "${BOLD}Privacy-first, local-first.${NC} Your code never leaves your machine."
-echo -e "Ollama + Qdrant + FalkorDB — all local. No API keys. No uploads."
+echo -e "Ollama + Qdrant + FalkorDB - all local. No API keys. No uploads."
 echo
 echo -e "Point it at a directory. It parses every function, embeds it,"
 echo -e "graphs the relationships, and serves it all via MCP."
@@ -91,11 +91,11 @@ pause 2
 
 # ── Step 3: LiteLLM ───────────────────────────────────────────────
 
-banner "Step 3: LiteLLM — local by default, cloud when you choose"
+banner "Step 3: LiteLLM - local by default, cloud when you choose"
 
 echo -e "  Every embedding and every synthesis routes through ${BOLD}LiteLLM${NC}."
 echo -e "  Default: ${BOLD}local Ollama${NC}. Nothing leaves your machine."
-echo -e "  Cloud providers are opt-in — one env var when you're ready."
+echo -e "  Cloud providers are opt-in - one env var when you're ready."
 echo
 echo -e "  ${DIM}Current config:${NC}"
 CURRENT_CHAT="${TLDREADME_CHAT_MODEL:-ollama/qwen2.5-coder:3b-instruct}"
@@ -104,7 +104,7 @@ echo -e "    Embeddings:  ${BOLD}${CURRENT_EMBED}${NC}       ${DIM}(local, free)
 echo -e "    Synthesis:   ${BOLD}${CURRENT_CHAT}${NC}      ${DIM}(local, free)${NC}"
 echo
 pause 2
-echo -e "  ${DIM}Switch to cloud — one line:${NC}"
+echo -e "  ${DIM}Switch to cloud - one line:${NC}"
 echo -e "    ${YELLOW}\$${NC} ${DIM}export LITELLM_URL=http://localhost:4000${NC}"
 echo -e "    ${DIM}Then uncomment your provider in litellm-config.yaml:${NC}"
 echo
@@ -118,7 +118,7 @@ pause 3
 
 # ── Step 4: Ask ───────────────────────────────────────────────────
 
-banner "Step 4: Ask questions — RAG-powered answers from the CLI"
+banner "Step 4: Ask questions - RAG-powered answers from the CLI"
 
 step "Asking: 'How does the parser extract symbols from source code?'"
 echo
@@ -128,12 +128,12 @@ pause 3
 
 # ── Step 5: MCP ───────────────────────────────────────────────────
 
-banner "Step 5: MCP Server — router-first for Claude Code"
+banner "Step 5: MCP Server - router-first for Claude Code"
 
-echo -e "  ${BOLD}repo_lookup${NC}      — Single read entry point: scan, search, symbol, impact, or edit context."
-echo -e "  ${BOLD}repo_next_action${NC} — Resume safely from sessions, overlaps, and imported child trees."
-echo -e "  ${BOLD}change_plan${NC}     — Turn a coding goal into files, risks, and verification steps."
-echo -e "  ${BOLD}verify_change${NC}   — Check evidence, tests, and acceptance criteria before calling work done."
+echo -e "  ${BOLD}repo_lookup${NC}      - Single read entry point: scan, search, symbol, impact, or edit context."
+echo -e "  ${BOLD}repo_next_action${NC} - Resume safely from sessions, overlaps, and imported child trees."
+echo -e "  ${BOLD}change_plan${NC}     - Turn a coding goal into files, risks, and verification steps."
+echo -e "  ${BOLD}verify_change${NC}   - Check evidence, tests, and acceptance criteria before calling work done."
 echo -e "  ${DIM}  ...and 11 more${NC}"
 echo
 echo -e "Connect to Claude Code:"

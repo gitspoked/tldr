@@ -1,4 +1,4 @@
-"""Hot index — on init, pre-scan top symbols/files so reads are instant lookups."""
+"""Hot index - on init, pre-scan top symbols/files so reads are instant lookups."""
 
 import json
 from dataclasses import dataclass, field
@@ -27,7 +27,7 @@ class HotIndex:
     top_files: list[str] = field(default_factory=list)           # most important files
 
     def lookup(self, name: str) -> Optional[HotEntry]:
-        """Instant lookup — no rg, no search, just return what we know."""
+        """Instant lookup - no rg, no search, just return what we know."""
         return self.entries.get(name)
 
     def save(self, path: Path):

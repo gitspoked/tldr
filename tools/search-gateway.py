@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Search Gateway MCP Server — read-only, root-jailed search over SSE.
+Search Gateway MCP Server - read-only, root-jailed search over SSE.
 
 Runs OUTSIDE a sandbox (or on a remote server) and exposes ripgrep-based
 search, file finding, and file reading locked to a single root directory.
@@ -74,7 +74,7 @@ def _find_rg() -> str:
             return candidate
         except (subprocess.CalledProcessError, FileNotFoundError):
             continue
-    raise RuntimeError("ripgrep (rg) not found — install it: https://github.com/BurntSushi/ripgrep")
+    raise RuntimeError("ripgrep (rg) not found - install it: https://github.com/BurntSushi/ripgrep")
 
 
 _RG: Optional[str] = None
@@ -483,7 +483,7 @@ def main():
     global _ROOT
 
     parser = argparse.ArgumentParser(
-        description="Search Gateway MCP — read-only, root-jailed search over SSE",
+        description="Search Gateway MCP - read-only, root-jailed search over SSE",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

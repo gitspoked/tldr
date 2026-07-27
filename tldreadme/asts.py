@@ -95,7 +95,7 @@ LANG_MAP = {
     ".kt": "kotlin",
     ".lua": "lua",
     ".zig": "zig",
-    # .json and .md omitted — tree-sitter parses them but they yield no
+    # .json and .md omitted - tree-sitter parses them but they yield no
     # useful symbols, and the markdown grammar crashes on many real-world
     # files (C-level abort in scanner.cc).
 }
@@ -144,9 +144,9 @@ def _parse_file_inprocess(path: Path) -> ParseResult | None:
     )
 
 
-# Subprocess wrapper — parses a batch of files (one per line on stdin) and
+# Subprocess wrapper - parses a batch of files (one per line on stdin) and
 # writes one JSON object per line to stdout.  If the C grammar crashes,
-# the whole batch dies — the caller retries the batch file-by-file.
+# the whole batch dies - the caller retries the batch file-by-file.
 _PARSE_BATCH_SCRIPT = '''
 import json, sys
 from pathlib import Path
@@ -250,7 +250,7 @@ def _parse_batch_isolated(
         return [], list(paths)
 
     if proc.returncode != 0:
-        # Subprocess crashed — all files need individual retry
+        # Subprocess crashed - all files need individual retry
         return [], list(paths)
 
     results = []
@@ -274,7 +274,7 @@ def parse_file(path: Path, timeout: int = 30, isolate: bool = True) -> ParseResu
     """Parse a single file with optional subprocess isolation.
 
     When isolate=True (default), tree-sitter runs in a child process so
-    C-level crashes (abort/SIGABRT) only kill the child — the pipeline
+    C-level crashes (abort/SIGABRT) only kill the child - the pipeline
     survives and logs a warning.
     """
 

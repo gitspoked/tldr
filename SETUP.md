@@ -12,7 +12,7 @@ Hey Claude, read this file and help me set up TLDREADME for my codebase.
 
 - **Python 3.11+** (**3.12 recommended**)
 - **Docker** (for Qdrant and FalkorDB)
-- **Ollama** (local LLM — free, private)
+- **Ollama** (local LLM - free, private)
 - **ripgrep** (`rg`)
 
 ## Step 1: Check Prerequisites
@@ -45,8 +45,8 @@ curl -fsSL https://ollama.com/install.sh | sh
 TLDREADME uses two models. Pull them once, they stay cached.
 
 ```bash
-ollama pull nomic-embed-text             # 274MB — code embeddings
-ollama pull qwen2.5-coder:3b-instruct   # 1.9GB — code understanding
+ollama pull nomic-embed-text             # 274MB - code embeddings
+ollama pull qwen2.5-coder:3b-instruct   # 1.9GB - code understanding
 
 # Verify
 ollama list
@@ -72,7 +72,7 @@ tldr doctor --fix    # interactive checkbox prompt for install/start suggestions
 docker compose up -d
 ```
 
-This starts **Qdrant** (vector search) and **FalkorDB** (graph database). That's it. Ollama runs natively — no container needed.
+This starts **Qdrant** (vector search) and **FalkorDB** (graph database). That's it. Ollama runs natively - no container needed.
 
 Verify:
 
@@ -144,7 +144,7 @@ In Claude Code:
 Use the know tool to look up "main" in my codebase.
 ```
 
-If Claude calls the MCP tool and returns code — you're set.
+If Claude calls the MCP tool and returns code - you're set.
 
 ## Step 7: Watch Mode (Optional)
 
@@ -165,12 +165,12 @@ If you don't want to run models locally, use `docker-compose.llm.yml` which adds
 ```bash
 # 1. Set your API key
 cp .env.example .env
-# Edit .env — add ONE of:
+# Edit .env - add ONE of:
 #   OPENAI_API_KEY=sk-...
 #   ANTHROPIC_API_KEY=sk-ant-...
 #   OPENROUTER_API_KEY=sk-or-...
 
-# 2. Edit litellm-config.yaml — uncomment your provider
+# 2. Edit litellm-config.yaml - uncomment your provider
 
 # 3. Start with LiteLLM stack instead
 docker compose -f docker-compose.llm.yml up -d
@@ -199,14 +199,14 @@ This gives you Qdrant + FalkorDB + LiteLLM (port 4000). In your `.env`, set `LIT
 
 ## Troubleshooting
 
-**"No module named tldreadme"** — `source .venv/bin/activate`
+**"No module named tldreadme"** - `source .venv/bin/activate`
 
-**"Connection refused" on Qdrant/FalkorDB** — `docker compose up -d`, wait 10 seconds
+**"Connection refused" on Qdrant/FalkorDB** - `docker compose up -d`, wait 10 seconds
 
-**"tree-sitter Language init error"** — `pip install 'tree-sitter==0.21.3' 'tree-sitter-languages==1.10.2'`
+**"tree-sitter Language init error"** - `pip install 'tree-sitter==0.21.3' 'tree-sitter-languages==1.10.2'`
 
-**Ollama not responding** — `ollama serve` (or check if it's running: `curl http://localhost:11434/api/tags`)
+**Ollama not responding** - `ollama serve` (or check if it's running: `curl http://localhost:11434/api/tags`)
 
-**Parse is slow on first run** — Normal for large codebases. Subsequent `watch` updates are incremental and fast.
+**Parse is slow on first run** - Normal for large codebases. Subsequent `watch` updates are incremental and fast.
 
-**Port 6379 conflict** — FalkorDB uses the standard Redis protocol port. If it collides on your machine, change the host-side port mapping in `docker-compose.yml`.
+**Port 6379 conflict** - FalkorDB uses the standard Redis protocol port. If it collides on your machine, change the host-side port mapping in `docker-compose.yml`.

@@ -1,4 +1,4 @@
-"""Daisy chains — composed tool sequences for common workflows.
+"""Daisy chains - composed tool sequences for common workflows.
 
 The insight: 80% of the time you need fast lookup → code → done.
 15% you need impact analysis. 5% you need semantic reasoning.
@@ -22,7 +22,7 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
     """
     result = {"name": name, "found": False}
 
-    # Step 1: Hot index (instant — cached top 100)
+    # Step 1: Hot index (instant - cached top 100)
     if hot_index:
         entry = hot_index.lookup(name)
         if entry:
@@ -42,7 +42,7 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
                     result["code"] = hits[0].text + "\n" + "\n".join(hits[0].after)
             return result
 
-    # Step 2: rg search (fast — milliseconds)
+    # Step 2: rg search (fast - milliseconds)
     search_name = name.split("::")[-1] if "::" in name else name
     hits = rg_search(
         f"(fn |struct |class |def |interface |enum |trait |pub |async ){search_name}",
@@ -74,7 +74,7 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
                 "server_command": semantic.get("server_command", []),
             }
 
-    # Step 3: Graph (if available — callers/callees)
+    # Step 3: Graph (if available - callers/callees)
     try:
         callers = rag.read_symbol(name)
         if callers:
@@ -90,7 +90,7 @@ def impact(name: str, root: str = ".") -> dict:
     """Impact chain: what breaks if I change this?
 
     Chain: rg (find all usages) → graph (transitive dependents) → severity assessment.
-    This is the 15% tool — use before modifying anything load-bearing.
+    This is the 15% tool - use before modifying anything load-bearing.
     """
     search_name = name.split("::")[-1] if "::" in name else name
 
@@ -126,16 +126,16 @@ def impact(name: str, root: str = ".") -> dict:
     # Step 3: Assess severity
     if total_references > 20:
         severity = "high"
-        warning = f"Load-bearing symbol — {total_references} references across {len(files_affected)} files"
+        warning = f"Load-bearing symbol - {total_references} references across {len(files_affected)} files"
     elif total_references > 5:
         severity = "medium"
-        warning = f"Moderately connected — {total_references} references across {len(files_affected)} files"
+        warning = f"Moderately connected - {total_references} references across {len(files_affected)} files"
     elif total_references > 0:
         severity = "low"
-        warning = f"Lightly used — {total_references} references in {len(files_affected)} files"
+        warning = f"Lightly used - {total_references} references in {len(files_affected)} files"
     else:
         severity = "orphan"
-        warning = "No references found — possibly unused or only used dynamically"
+        warning = "No references found - possibly unused or only used dynamically"
 
     return {
         "name": name,
@@ -153,7 +153,7 @@ def discover(query: str, root: str = ".", hot_index: Optional[HotIndex] = None) 
 
     Chain: rg (literal search) → semantic (Qdrant) → merge + deduplicate → rank.
     Combines exact text matching with semantic similarity.
-    The 5% tool — for exploration and pattern-finding.
+    The 5% tool - for exploration and pattern-finding.
     """
     # Step 1: rg for exact/regex matches
     rg_hits = rg_search(query, [root], context=5, max_results=10)
@@ -196,14 +196,14 @@ def discover(query: str, root: str = ".", hot_index: Optional[HotIndex] = None) 
 
 
 def explain(name: str, root: str = ".", hot_index: Optional[HotIndex] = None) -> str:
-    """Full explanation chain — the everything tool.
+    """Full explanation chain - the everything tool.
 
     Chain: know → impact → discover similar → LLM synthesis.
     Returns a natural language explanation of a symbol: what it is,
     how it works, what depends on it, what's similar, and what
     you should be careful about when modifying it.
 
-    The full chain — use when you need deep understanding before a major change.
+    The full chain - use when you need deep understanding before a major change.
     """
     # Gather all intelligence
     knowledge = know(name, hot_index=hot_index, root=root)
@@ -238,5 +238,5 @@ def explain(name: str, root: str = ".", hot_index: Optional[HotIndex] = None) ->
             context,
         )
     except Exception:
-        # LLM not available — return raw context
+        # LLM not available - return raw context
         return context

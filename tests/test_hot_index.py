@@ -1,4 +1,4 @@
-"""Tests for hot index — caching, persistence, lookup."""
+"""Tests for hot index - caching, persistence, lookup."""
 
 import json
 import tempfile

@@ -1,4 +1,4 @@
-"""The init pipeline — scan, parse, embed, graph, generate."""
+"""The init pipeline - scan, parse, embed, graph, generate."""
 
 from pathlib import Path
 from rich.console import Console

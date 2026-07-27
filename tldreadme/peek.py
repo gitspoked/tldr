@@ -5,25 +5,25 @@ returning a structured dict that works whether the target is indexed or not.
 
 Layered enrichment model
 ------------------------
-Layer 0 — Filesystem scan (always runs):
+Layer 0 - Filesystem scan (always runs):
     Walk the directory tree (max depth 3, symlinks skipped, noise dirs excluded).
     For directories: file count by extension, total line count.
     For files: line count, extension, symbol extraction via tree-sitter (with
     regex fallback). Files over 1MB skip symbol extraction.
 
-Layer 1 — Context docs (always runs):
+Layer 1 - Context docs (always runs):
     scan_context_docs() finds README.md, CLAUDE.md, AGENTS.md, CODEX.md,
     GEMINI.md, etc. from the target or its nearest project root.
     extract_deps_from_directory() detects project name/version from
     pyproject.toml, package.json, Cargo.toml, go.mod, setup.py.
 
-Layer 2 — Indexed knowledge (runs if .tldr/ exists):
+Layer 2 - Indexed knowledge (runs if .tldr/ exists):
     Loads hot_index.json (top 20 symbols by importance heuristic).
     Reads .claude/TLDR.md as a pre-generated summary.
 
-Layer 3 — Live services (runs if services respond within 1s):
-    Raw HTTP GET to Qdrant /collections — if 200, uses get_embedder() for
-    semantic neighbor search. Raw TCP PING to FalkorDB — if PONG, uses
+Layer 3 - Live services (runs if services respond within 1s):
+    Raw HTTP GET to Qdrant /collections - if 200, uses get_embedder() for
+    semantic neighbor search. Raw TCP PING to FalkorDB - if PONG, uses
     get_grapher() for call-graph neighbors. Both use 1-second timeouts and
     skip gracefully on failure; never instantiates CodeEmbedder/CodeGrapher
     eagerly (their __init__ connects).
@@ -65,7 +65,7 @@ SKIP_DIRS = frozenset(
 )
 
 MAX_SCAN_DEPTH: int = 3
-MAX_FILE_SIZE: int = 1_000_000  # bytes — skip binary/huge files for line counting
+MAX_FILE_SIZE: int = 1_000_000  # bytes - skip binary/huge files for line counting
 
 # ---------------------------------------------------------------------------
 # Symbol extraction patterns
@@ -457,7 +457,7 @@ def render_peek(result: dict) -> str:
 
     Produces plain-text output with ruled section headers, suitable for
     display in a terminal or Claude Code's output pane. No Rich/ANSI
-    dependencies — output is plain text that reads well at any width.
+    dependencies - output is plain text that reads well at any width.
 
     Sections (each only shown when data is present):
         Header: project name + manifest, version, file count, line count,
@@ -531,7 +531,7 @@ def render_peek(result: dict) -> str:
         if result.get("generated_summary"):
             lines.append(".claude/TLDR.md generated")
     else:
-        lines.append("Not indexed — run `tldr init` for full analysis")
+        lines.append("Not indexed - run `tldr init` for full analysis")
 
     layers = result.get("enrichment_layers", [])
     if "qdrant" not in layers:
@@ -559,9 +559,9 @@ def render_peek_markdown(result: dict) -> str:
     Structure:
         # project-name-or-directory-name
         Stats line (files, lines, extension breakdown)
-        ## Context  — context docs as bullet list
-        ## Symbols  — markdown table (kind | name | line)
-        ## Status   — indexed flag, enrichment layers, fallbacks
+        ## Context  - context docs as bullet list
+        ## Symbols  - markdown table (kind | name | line)
+        ## Status   - indexed flag, enrichment layers, fallbacks
     """
     lines: list[str] = []
     path = Path(result["path"])
@@ -630,9 +630,9 @@ def peek_to_router_result(peek_result: dict) -> dict:
     to know whether the result came from an indexed query or a raw peek.
 
     Confidence tiers:
-        0.5 — layers 0-1 only (filesystem + context docs)
-        0.7 — layer 2 present (.tldr/ indexed knowledge)
-        0.9 — layer 3 present (Qdrant or FalkorDB responded)
+        0.5 - layers 0-1 only (filesystem + context docs)
+        0.7 - layer 2 present (.tldr/ indexed knowledge)
+        0.9 - layer 3 present (Qdrant or FalkorDB responded)
 
     Returns:
         dict with keys: summary, confidence, evidence,
@@ -680,7 +680,7 @@ def peek_to_router_result(peek_result: dict) -> dict:
     elif "qdrant" not in layers or "falkordb" not in layers:
         recommended = "Start services (`docker compose up -d`) for richer analysis"
     else:
-        recommended = "Codebase fully indexed — use repo_lookup for specific queries"
+        recommended = "Codebase fully indexed - use repo_lookup for specific queries"
 
     return {
         "summary": summary,
