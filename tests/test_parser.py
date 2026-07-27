@@ -1,4 +1,4 @@
-"""Tests for tree-sitter parser — the foundation of everything."""
+"""Tests for tree-sitter parser - the foundation of everything."""
 
 import tempfile
 from pathlib import Path
@@ -57,7 +57,7 @@ def test_parse_python_function():
 def test_parse_python_signature_survives_unicode_prefix():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
         f.write(
-            '"""Shared singleton instances — one connection per process."""\n\n'
+            '"""Shared singleton instances - one connection per process."""\n\n'
             "def get_embedder():\n"
             "    return None\n"
         )
@@ -355,7 +355,7 @@ def test_parse_empty_file():
         f.flush()
         result = parse_file(Path(f.name))
 
-    # Empty file has no symbols — parser may return None or empty
+    # Empty file has no symbols - parser may return None or empty
     assert result is None or len(result.symbols) == 0
 
 
@@ -365,7 +365,7 @@ def test_parse_binary_file():
         f.flush()
         result = parse_file(Path(f.name))
 
-    # Should not crash — errors="replace" handles it
+    # Should not crash - errors="replace" handles it
     assert result is not None or result is None  # just don't crash
 
 

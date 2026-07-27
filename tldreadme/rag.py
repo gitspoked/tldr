@@ -1,4 +1,4 @@
-"""RAG engine — retrieve from Qdrant + FalkorDB, synthesize via LiteLLM."""
+"""RAG engine - retrieve from Qdrant + FalkorDB, synthesize via LiteLLM."""
 
 from pathlib import Path
 import re
@@ -360,7 +360,7 @@ def ask_question(question: str, scope: str | None = None) -> str:
     # 1. Semantic retrieval from Qdrant
     similar_chunks = embedder.search_similar(question, limit=10)
 
-    # 2. Graph retrieval — if question mentions a symbol, get its neighborhood
+    # 2. Graph retrieval - if question mentions a symbol, get its neighborhood
     graph_context = []
     for chunk in similar_chunks[:3]:
         name = chunk.get("symbol_name", "")
@@ -452,7 +452,7 @@ def tldr(path: str) -> str:
     context = f"Module: {path}\n"
     context += f"Symbols ({len(symbols)}):\n"
     for s in symbols:
-        context += f"  {s['kind']} {s['name']} — {s['signature']}\n"
+        context += f"  {s['kind']} {s['name']} - {s['signature']}\n"
 
     prompt = (
         f"You are a senior developer. Give a concise TL;DR of this module.\n"
@@ -762,7 +762,7 @@ def _build_context(chunks: list[dict], graph_ctx: list[dict]) -> str:
     """Assemble retrieved code + graph info into LLM context."""
     parts = []
 
-    # Code chunks — show actual code
+    # Code chunks - show actual code
     for c in chunks[:5]:
         parts.append(
             f"### {c['kind']} `{c['symbol_name']}` ({c['file']}:{c['line']})\n"

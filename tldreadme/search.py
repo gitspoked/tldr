@@ -1,4 +1,4 @@
-"""Fast text search via ripgrep — complements semantic search (Qdrant)."""
+"""Fast text search via ripgrep - complements semantic search (Qdrant)."""
 
 import subprocess
 import json
@@ -31,7 +31,7 @@ def rg_search(
 ) -> list[SearchHit]:
     """Search with ripgrep, return matches with surrounding context.
 
-    This is the fast path — no embeddings, no LLM, just rg.
+    This is the fast path - no embeddings, no LLM, just rg.
     Use for: exact strings, regex, known identifiers, error messages.
 
     Args:
@@ -203,7 +203,7 @@ def rg_count(pattern: str, paths: list[str], file_type: Optional[str] = None) ->
 
 
 def format_hits_for_llm(hits: list[SearchHit], max_chars: int = 8000) -> str:
-    """Format search hits as context for an LLM — actual code, not just refs."""
+    """Format search hits as context for an LLM - actual code, not just refs."""
     parts = []
     total = 0
 

@@ -36,7 +36,7 @@ Your Code
 
 ## The Tools
 
-### The 80% — Just Show Me The Code
+### The 80% - Just Show Me The Code
 
 | Tool | What |
 |------|------|
@@ -78,7 +78,7 @@ Use `repo_next_action` when resuming interrupted work, `repo_lookup` to understa
 | `read_depends` | Full dependency chain from the graph. |
 | `read_flow` | Trace execution from entry point through call chain. |
 
-### The 5% — I Need To Think
+### The 5% - I Need To Think
 
 | Tool | What |
 |------|------|
@@ -87,7 +87,7 @@ Use `repo_next_action` when resuming interrupted work, `repo_lookup` to understa
 | `explain` | Full LLM-powered explanation: what it does, what depends on it, what to watch out for. |
 | `tldr` | RAG-powered summary of any module or directory. |
 
-### Backwards Flow — The Code Tells You What To Do
+### Backwards Flow - The Code Tells You What To Do
 
 | Tool | What |
 |------|------|
@@ -196,7 +196,7 @@ For bedrock contract checks, run `.venv/bin/python -m pytest -m bedrock -q`. The
 ```bash
 docker compose up -d
 
-# Ollama runs natively (not in Docker) — pull models locally:
+# Ollama runs natively (not in Docker) - pull models locally:
 ollama pull nomic-embed-text
 ollama pull qwen2.5-coder:3b-instruct
 ```

@@ -1,4 +1,4 @@
-"""FalkorDB graph builder — call graphs, imports, data flow, patterns."""
+"""FalkorDB graph builder - call graphs, imports, data flow, patterns."""
 
 from .parser import ParseResult, Symbol, Import, CallSite
 from .lazy import load_attr

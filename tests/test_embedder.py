@@ -1,4 +1,4 @@
-"""Tests for embedder — chunk creation, IDs, and data structures.
+"""Tests for embedder - chunk creation, IDs, and data structures.
 
 These tests cover everything that doesn't need a running Qdrant/Ollama.
 """

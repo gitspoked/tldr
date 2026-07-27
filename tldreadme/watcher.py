@@ -1,4 +1,4 @@
-"""Directory watcher — re-indexes on file changes, keeps knowledge current."""
+"""Directory watcher - re-indexes on file changes, keeps knowledge current."""
 
 from pathlib import Path
 from watchdog.observers import Observer
@@ -39,7 +39,7 @@ class CodeChangeHandler(FileSystemEventHandler):
         if any(skip in path.parts for skip in (".git", "node_modules", "target", "__pycache__", ".venv")):
             return
 
-        # Debounce — same file within 2 seconds
+        # Debounce - same file within 2 seconds
         now = time.time()
         if path_str in self._debounce and (now - self._debounce[path_str]) < 2.0:
             return

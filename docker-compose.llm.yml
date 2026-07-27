@@ -1,4 +1,4 @@
-# TLDREADME + LiteLLM — for cloud providers (OpenAI, Anthropic, OpenRouter)
+# TLDREADME + LiteLLM - for cloud providers (OpenAI, Anthropic, OpenRouter)
 # Use instead of default docker-compose.yml when you don't want local Ollama
 # Usage: docker compose -f docker-compose.llm.yml up -d
 

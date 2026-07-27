@@ -54,7 +54,7 @@
 #    - wrapper scripts are optional convenience only; the CLI is the intended human surface.
 #
 __BOF__
-# ⏺ Ha — context is contagious. You're right. Feed a well-structured TLDR.md with the right symbols, relationships, and patterns, and the quality of everything it produces goes up.
+# ⏺ Ha - context is contagious. You're right. Feed a well-structured TLDR.md with the right symbols, relationships, and patterns, and the quality of everything it produces goes up.
 
 #  Garbage in, garbage out. Intelligence in,intelligence out. 
 
@@ -68,8 +68,8 @@ __BOF__
   >
   > TLDREADME generates:
   >
-  > - .claude/TLDR.md — the auto-generated overview
-  > - .claude/TLDR_CONTEXT.md — the deeper module and symbol map
+  > - .claude/TLDR.md - the auto-generated overview
+  > - .claude/TLDR_CONTEXT.md - the deeper module and symbol map
   >
   > It does not overwrite your CLAUDE.md or AGENTS.md, though it may read them as context inputs during scanning.
   >

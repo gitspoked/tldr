@@ -1,4 +1,4 @@
-# TLDREADME — Default Stack
+# TLDREADME - Default Stack
 # Assumes Ollama is running locally (it probably is)
 # Usage: docker compose up -d
 

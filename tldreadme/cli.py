@@ -1,4 +1,4 @@
-"""CLI entry point — tldr init|watch|serve|ask"""
+"""CLI entry point - tldr init|watch|serve|ask"""
 
 import click
 import json
@@ -26,7 +26,7 @@ class _PathFallbackGroup(click.Group):
 )
 @click.pass_context
 def main(ctx):
-    """TLDREADME — TL;DR for any codebase."""
+    """TLDREADME - TL;DR for any codebase."""
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
@@ -53,7 +53,7 @@ def init(directory: str, output: str):
 @click.option("--json-output", is_flag=True, help="Print the raw peek payload as JSON.")
 @click.option("--markdown", is_flag=True, help="Render output as markdown.")
 def peek(path: str, json_output: bool, markdown: bool):
-    """Quick reconnaissance of a directory or file — no indexing required."""
+    """Quick reconnaissance of a directory or file - no indexing required."""
     from .peek import peek_target, render_peek, render_peek_markdown
 
     result = peek_target(path)

@@ -271,7 +271,7 @@ def test_repo_lookup_dispatches_to_impact_for_change_risk_queries(monkeypatch, t
         lambda *_args, **_kwargs: {
             "name": "parse_file",
             "severity": "high",
-            "warning": "Load-bearing symbol — 28 references across 9 files",
+            "warning": "Load-bearing symbol - 28 references across 9 files",
             "reference_source": "lsp",
             "total_references": 28,
             "files_affected": ["tldreadme/parser.py", "tldreadme/asts.py"],

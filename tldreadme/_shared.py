@@ -1,4 +1,4 @@
-"""Shared singleton instances — one connection per process, not per call."""
+"""Shared singleton instances - one connection per process, not per call."""
 
 from .lazy import load_attr
 

@@ -18,7 +18,7 @@ CHAT_MODEL = os.getenv("TLDREADME_CHAT_MODEL", "ollama/qwen2.5-coder:3b-instruct
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 
 def _api_base():
-    """Return API base — LiteLLM proxy if configured, otherwise direct Ollama."""
+    """Return API base - LiteLLM proxy if configured, otherwise direct Ollama."""
     return LITELLM_URL if LITELLM_URL else OLLAMA_URL
 
 
@@ -60,7 +60,7 @@ class CodeChunk:
 
 
 def chunk_id(file: str, name: str, line: int) -> str:
-    """Deterministic ID for a code chunk — same symbol at same location = same ID."""
+    """Deterministic ID for a code chunk - same symbol at same location = same ID."""
     raw = f"{file}:{name}:{line}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -125,7 +125,7 @@ class CodeEmbedder:
     def _ensure_collection(self):
         collections = [c.name for c in self.client.get_collections().collections]
         if COLLECTION not in collections:
-            # Dimension depends on model — nomic-embed-text = 768, OpenAI = 1536
+            # Dimension depends on model - nomic-embed-text = 768, OpenAI = 1536
             # We'll detect on first embed
             self._collection_created = False
         else:
