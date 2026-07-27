@@ -107,8 +107,8 @@ Use `repo_next_action` when resuming interrupted work, `repo_lookup` to understa
 ### Install
 
 ```bash
-git clone https://github.com/ntele-dev/tldreadme.git
-cd tldreadme
+git clone https://github.com/gitspoked/tldr.git
+cd tldr
 python3.12 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/tldr doctor

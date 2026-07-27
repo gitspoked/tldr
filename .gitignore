@@ -32,3 +32,4 @@ build/
 *.qbdw
 *.jsonl
 *.tmp
+.serena/

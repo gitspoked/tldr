@@ -6,12 +6,12 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6633:6333"
-      - "6634:6334"
+      - "127.0.0.1:6633:6333"
+      - "127.0.0.1:6634:6334"
     volumes:
       - ./.tldr/qdrant:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6633/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -19,7 +19,7 @@ services:
   falkordb:
     image: falkordb/falkordb:latest
     ports:
-      - "6397:6379"
+      - "127.0.0.1:6398:6379"
     volumes:
       - ./.tldr/falkordb:/data
     command: >

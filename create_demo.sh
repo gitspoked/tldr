@@ -146,6 +146,6 @@ pause 2
 
 banner "That's it. Codebase indexed."
 
-echo -e "  ${DIM}GitHub:${NC}  github.com/ntele-dev/tldreadme"
+echo -e "  ${DIM}GitHub:${NC}  github.com/gitspoked/tldr"
 echo -e "  ${DIM}Install:${NC} pip install -e '.[dev]' && docker compose up -d && tldr init ."
 echo

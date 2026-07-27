@@ -45,7 +45,7 @@ Returns: every match with 3 lines of context above and below. Actual code, not f
 Even simpler — just tell me which files.
 
 ```
-read_grep_files("WebRtcIceAgent", ["/Users/claude/redfire-switch"])
+read_grep_files("WebRtcIceAgent", ["/path/to/your-repo"])
 ```
 
 Returns: file paths. That's it. Use this to scope down before a deeper dive.
