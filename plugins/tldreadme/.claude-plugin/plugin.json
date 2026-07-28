@@ -1,0 +1,23 @@
+{
+  "name": "tldreadme",
+  "displayName": "TLDREADME",
+  "version": "0.1.3",
+  "description": "Local-first codebase reconnaissance, planning, and verification through TLDREADME.",
+  "author": {
+    "name": "Matt Klein",
+    "email": "247545230+gitspoked@users.noreply.github.com",
+    "url": "https://github.com/gitspoked"
+  },
+  "homepage": "https://github.com/gitspoked/tldr",
+  "repository": "https://github.com/gitspoked/tldr",
+  "license": "MIT",
+  "keywords": [
+    "codebase",
+    "context",
+    "mcp",
+    "local-first",
+    "repository"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

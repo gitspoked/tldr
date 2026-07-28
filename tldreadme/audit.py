@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from urllib.request import urlopen
 import shlex
 import subprocess
 import sys
 import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from urllib.request import urlopen
 
 from .runtime import audit_tool_checks
 
@@ -20,7 +20,9 @@ CATEGORY_SCANNERS = {
     "secrets": ("gitleaks",),
     "llm": ("garak",),
 }
-DEFAULT_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+DEFAULT_KEV_URL = (
+    "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+)
 DEFAULT_KEV_PATH = ".tldr/security/known_exploited_vulnerabilities.json"
 SECURITY_ROOT = ".tldr/security"
 REPORTS_DIR = "reports"
@@ -131,7 +133,9 @@ def _load_kev_catalog(path: str | None) -> dict[str, dict[str, object]]:
     return indexed
 
 
-def _apply_kev(findings: list[dict[str, object]], kev_catalog: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+def _apply_kev(
+    findings: list[dict[str, object]], kev_catalog: dict[str, dict[str, object]]
+) -> list[dict[str, object]]:
     """Annotate findings with KEV metadata when a CVE is known exploited."""
 
     if not kev_catalog:
@@ -141,7 +145,9 @@ def _apply_kev(findings: list[dict[str, object]], kev_catalog: dict[str, dict[st
     for finding in findings:
         aliases = [str(alias).upper() for alias in finding.get("aliases", [])]
         candidates = [str(finding.get("id") or "").upper(), *aliases]
-        match = next((kev_catalog[candidate] for candidate in candidates if candidate in kev_catalog), None)
+        match = next(
+            (kev_catalog[candidate] for candidate in candidates if candidate in kev_catalog), None
+        )
         if not match:
             annotated.append(finding)
             continue
@@ -196,7 +202,9 @@ def _category_order(category: str, *, prefer_snyk: bool) -> tuple[str, ...]:
 
     scanners = list(CATEGORY_SCANNERS[category])
     if prefer_snyk:
-        snyk_tool = "snyk-oss" if category == "deps" else "snyk-code" if category == "code" else None
+        snyk_tool = (
+            "snyk-oss" if category == "deps" else "snyk-code" if category == "code" else None
+        )
         if snyk_tool and snyk_tool in scanners:
             scanners.remove(snyk_tool)
             scanners.insert(0, snyk_tool)
@@ -303,7 +311,11 @@ def _run_json_command(
             raw_stderr=result.stderr,
         )
 
-    details = "No findings reported." if summary["total"] == 0 else f"{summary['total']} findings reported."
+    details = (
+        "No findings reported."
+        if summary["total"] == 0
+        else f"{summary['total']} findings reported."
+    )
     return _base_result(
         name,
         "ok" if summary["total"] == 0 else "warn",
@@ -330,12 +342,20 @@ def _parse_osv(payload: object) -> list[dict[str, object]]:
             package_name = package.get("name")
             package_version = package.get("version")
             for vulnerability in package_entry.get("vulnerabilities", []):
-                db_specific = vulnerability.get("database_specific", {}) if isinstance(vulnerability, dict) else {}
+                db_specific = (
+                    vulnerability.get("database_specific", {})
+                    if isinstance(vulnerability, dict)
+                    else {}
+                )
                 findings.append(
                     {
                         "id": vulnerability.get("id"),
-                        "title": vulnerability.get("summary") or vulnerability.get("id") or "OSV vulnerability",
-                        "severity": db_specific.get("severity") or vulnerability.get("severity") or "unknown",
+                        "title": vulnerability.get("summary")
+                        or vulnerability.get("id")
+                        or "OSV vulnerability",
+                        "severity": db_specific.get("severity")
+                        or vulnerability.get("severity")
+                        or "unknown",
                         "path": source_path,
                         "package": package_name,
                         "version": package_version,
@@ -363,7 +383,9 @@ def _parse_pip_audit(payload: object) -> list[dict[str, object]]:
             findings.append(
                 {
                     "id": vulnerability.get("id"),
-                    "title": vulnerability.get("description") or vulnerability.get("id") or "Dependency vulnerability",
+                    "title": vulnerability.get("description")
+                    or vulnerability.get("id")
+                    or "Dependency vulnerability",
                     "severity": vulnerability.get("severity") or "unknown",
                     "package": package_name,
                     "version": package_version,
@@ -440,7 +462,9 @@ def _parse_gitleaks(payload: object) -> list[dict[str, object]]:
     return findings
 
 
-def _run_osv(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+def _run_osv(
+    root: Path, *, dry_run: bool, install_options: list[dict[str, str]]
+) -> dict[str, object]:
     return _run_osv_with_options(root, dry_run=dry_run, install_options=install_options)
 
 
@@ -467,7 +491,9 @@ def _run_osv_with_options(
     )
 
 
-def _run_pip_audit(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+def _run_pip_audit(
+    root: Path, *, dry_run: bool, install_options: list[dict[str, str]]
+) -> dict[str, object]:
     del root
     return _run_json_command(
         "pip-audit",
@@ -488,8 +514,11 @@ def _parse_snyk_oss(payload: object) -> list[dict[str, object]]:
     for vulnerability in payload.get("vulnerabilities", []):
         findings.append(
             {
-                "id": vulnerability.get("id") or vulnerability.get("identifiers", {}).get("CVE", [None])[0],
-                "title": vulnerability.get("title") or vulnerability.get("id") or "Snyk vulnerability",
+                "id": vulnerability.get("id")
+                or vulnerability.get("identifiers", {}).get("CVE", [None])[0],
+                "title": vulnerability.get("title")
+                or vulnerability.get("id")
+                or "Snyk vulnerability",
                 "severity": vulnerability.get("severity") or "unknown",
                 "package": vulnerability.get("packageName"),
                 "version": vulnerability.get("version"),
@@ -509,7 +538,9 @@ def _parse_snyk_code(payload: object) -> list[dict[str, object]]:
 
     for run in payload.get("runs", []):
         results = run.get("results", [])
-        rules = {rule.get("id"): rule for rule in run.get("tool", {}).get("driver", {}).get("rules", [])}
+        rules = {
+            rule.get("id"): rule for rule in run.get("tool", {}).get("driver", {}).get("rules", [])
+        }
         for result in results:
             rule = rules.get(result.get("ruleId"), {})
             locations = result.get("locations", [])
@@ -524,7 +555,10 @@ def _parse_snyk_code(payload: object) -> list[dict[str, object]]:
             findings.append(
                 {
                     "id": result.get("ruleId"),
-                    "title": rule.get("name") or result.get("message", {}).get("text") or result.get("ruleId") or "Snyk Code finding",
+                    "title": rule.get("name")
+                    or result.get("message", {}).get("text")
+                    or result.get("ruleId")
+                    or "Snyk Code finding",
                     "severity": (rule.get("properties", {}) or {}).get("severity") or "unknown",
                     "path": path,
                     "line": line,
@@ -533,7 +567,9 @@ def _parse_snyk_code(payload: object) -> list[dict[str, object]]:
     return findings
 
 
-def _run_semgrep(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+def _run_semgrep(
+    root: Path, *, dry_run: bool, install_options: list[dict[str, str]]
+) -> dict[str, object]:
     return _run_json_command(
         "Semgrep",
         [sys.executable, "-m", "semgrep", "scan", "--config", "auto", "--json", str(root)],
@@ -543,7 +579,9 @@ def _run_semgrep(root: Path, *, dry_run: bool, install_options: list[dict[str, s
     )
 
 
-def _run_bandit(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+def _run_bandit(
+    root: Path, *, dry_run: bool, install_options: list[dict[str, str]]
+) -> dict[str, object]:
     return _run_json_command(
         "Bandit",
         [sys.executable, "-m", "bandit", "-r", str(root), "-f", "json"],
@@ -553,7 +591,9 @@ def _run_bandit(root: Path, *, dry_run: bool, install_options: list[dict[str, st
     )
 
 
-def _run_gitleaks(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+def _run_gitleaks(
+    root: Path, *, dry_run: bool, install_options: list[dict[str, str]]
+) -> dict[str, object]:
     with TemporaryDirectory() as temp_dir:
         report_path = Path(temp_dir) / "gitleaks.json"
         command = [
@@ -595,7 +635,9 @@ def _run_gitleaks(root: Path, *, dry_run: bool, install_options: list[dict[str, 
         return _base_result(
             "Gitleaks",
             "ok" if summary["total"] == 0 else "warn",
-            "No findings reported." if summary["total"] == 0 else f"{summary['total']} findings reported.",
+            "No findings reported."
+            if summary["total"] == 0
+            else f"{summary['total']} findings reported.",
             command=command,
             findings=findings,
             install_options=install_options,
@@ -603,7 +645,9 @@ def _run_gitleaks(root: Path, *, dry_run: bool, install_options: list[dict[str, 
         )
 
 
-def _run_snyk_oss(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+def _run_snyk_oss(
+    root: Path, *, dry_run: bool, install_options: list[dict[str, str]]
+) -> dict[str, object]:
     return _run_json_command(
         "Snyk Open Source",
         ["snyk", "test", "--json", str(root)],
@@ -613,7 +657,9 @@ def _run_snyk_oss(root: Path, *, dry_run: bool, install_options: list[dict[str, 
     )
 
 
-def _run_snyk_code(root: Path, *, dry_run: bool, install_options: list[dict[str, str]]) -> dict[str, object]:
+def _run_snyk_code(
+    root: Path, *, dry_run: bool, install_options: list[dict[str, str]]
+) -> dict[str, object]:
     return _run_json_command(
         "Snyk Code",
         ["snyk", "code", "test", "--json", str(root)],
@@ -656,11 +702,7 @@ def _run_garak(
             timeout=900,
             cwd=temp_dir,
         )
-        artifacts = sorted(
-            str(path)
-            for path in Path(temp_dir).glob("garak.*")
-            if path.is_file()
-        )
+        artifacts = sorted(str(path) for path in Path(temp_dir).glob("garak.*") if path.is_file())
         if result.returncode not in (0, 1):
             return _base_result(
                 "Garak",
@@ -748,7 +790,9 @@ def _reports_dir(root: str | Path = ".") -> Path:
     return _security_root(root) / REPORTS_DIR
 
 
-def save_audit_report(report: dict[str, object], *, root: str = ".", label: str | None = None) -> dict[str, object]:
+def save_audit_report(
+    report: dict[str, object], *, root: str = ".", label: str | None = None
+) -> dict[str, object]:
     """Persist an audit report under .tldr/security/reports and update the latest snapshot."""
 
     reports_dir = _reports_dir(root)
@@ -774,7 +818,11 @@ def read_security_state(*, root: str = ".") -> dict[str, object]:
     security_root = _security_root(root)
     latest_path = security_root / "latest-audit.json"
     kev_path = security_root / Path(DEFAULT_KEV_PATH).name
-    reports = sorted(_reports_dir(root).glob("*.json"), reverse=True) if _reports_dir(root).exists() else []
+    reports = (
+        sorted(_reports_dir(root).glob("*.json"), reverse=True)
+        if _reports_dir(root).exists()
+        else []
+    )
     latest_report = None
     if latest_path.exists():
         latest_report = _parse_json(latest_path.read_text(encoding="utf-8"))
@@ -794,7 +842,9 @@ def _missing_checks_next_action(checks: list[dict[str, object]]) -> str:
 
     missing = [check for check in checks if check.get("status") != "ok"]
     if not missing:
-        return "Run the audit again after fixes, or expand to `tldr audit all` for broader coverage."
+        return (
+            "Run the audit again after fixes, or expand to `tldr audit all` for broader coverage."
+        )
 
     first = missing[0]
     if first.get("install_options"):
@@ -866,14 +916,13 @@ def run_audit(
             "root": str(root_path),
             "ok": all(result.get("ok", False) for result in category_results),
             "status": _category_status(
-                [
-                    {"status": result.get("status", "warn")}
-                    for result in category_results
-                ]
+                [{"status": result.get("status", "warn")} for result in category_results]
             ),
             "summary": summary,
             "checks": [check for result in category_results for check in result.get("checks", [])],
-            "scanners": [scanner for result in category_results for scanner in result.get("scanners", [])],
+            "scanners": [
+                scanner for result in category_results for scanner in result.get("scanners", [])
+            ],
             "categories": category_results,
             "policy_profile": policy_profile,
             "recommended_next_action": next(
@@ -977,17 +1026,27 @@ def run_audit(
         else _missing_checks_next_action(checks)
     )
     if summary["total"] > 0 and not dry_run:
-        recommended_next_action = "Review the reported findings, fix the highest-severity issues, then rerun this audit."
+        recommended_next_action = (
+            "Review the reported findings, fix the highest-severity issues, then rerun this audit."
+        )
     if summary["kev"] > 0:
         recommended_next_action = "Prioritize the known exploited findings first, then rerun this audit after remediation."
-    if policy_profile and summary["total"] == 0 and category not in policy_profile["recommended_categories"]:
+    if (
+        policy_profile
+        and summary["total"] == 0
+        and category not in policy_profile["recommended_categories"]
+    ):
         recommended_next_action = (
             f"{policy_profile['name']} emphasizes {', '.join(policy_profile['recommended_categories'])}; "
             f"consider auditing one of those categories next."
         )
     if offline and selected_tool_id != "osv-scanner" and category == "deps":
         recommended_next_action = "Offline dependency mode requires OSV-Scanner; install it and rerun `tldr audit deps --offline`."
-    if prefer_snyk and selected_tool_id not in {"snyk-oss", "snyk-code"} and category in {"deps", "code"}:
+    if (
+        prefer_snyk
+        and selected_tool_id not in {"snyk-oss", "snyk-code"}
+        and category in {"deps", "code"}
+    ):
         recommended_next_action = "Snyk preference is enabled, but the Snyk CLI is unavailable; install and authenticate `snyk`, or rerun without `--prefer-snyk`."
 
     missing_required_scanner = category != "llm" and selected_tool_id is None

@@ -1,25 +1,15 @@
-"""Daisy chains - composed tool sequences for common workflows.
-
-The insight: 80% of the time you need fast lookup → code → done.
-15% you need impact analysis. 5% you need semantic reasoning.
-Chains start fast and go deeper only when needed.
-"""
+"""Composed lookup sequences that start locally and add deeper context as needed."""
 
 from typing import Optional
-from .hot_index import HotIndex
-from .search import rg_search, rg_files, rg_count, format_hits_for_llm
+
 from . import rag
+from .hot_index import HotIndex
 from .lsp import semantic_inspect_symbol
+from .search import rg_count, rg_files, rg_search
 
 
 def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> dict:
-    """The primary chain: know everything about a symbol as fast as possible.
-
-    Chain: hot_index → rg (definition + usages) → graph (callers/callees) → done.
-    Stops as soon as it has enough. No LLM unless you need synthesis.
-
-    This is the tool Claude will call 80% of the time.
-    """
+    """Find a symbol through the hot index, text search, LSP, and graph."""
     result = {"name": name, "found": False}
 
     # Step 1: Hot index (instant - cached top 100)
@@ -32,11 +22,16 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
             result["hit_count"] = entry.hit_count
             result["locations"] = entry.locations
             # If it's in the hot index, we already know a lot. Get the code.
-            definition = next((l for l in entry.locations if l.get("definition")), None)
+            definition = next(
+                (location for location in entry.locations if location.get("definition")),
+                None,
+            )
             if definition:
                 hits = rg_search(
                     f"(fn |struct |class |def |interface |enum |trait ){name.split('::')[-1]}",
-                    [definition["file"]], context=20, max_results=1,
+                    [definition["file"]],
+                    context=20,
+                    max_results=1,
                 )
                 if hits:
                     result["code"] = hits[0].text + "\n" + "\n".join(hits[0].after)
@@ -46,7 +41,9 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
     search_name = name.split("::")[-1] if "::" in name else name
     hits = rg_search(
         f"(fn |struct |class |def |interface |enum |trait |pub |async ){search_name}",
-        [root], context=15, max_results=5,
+        [root],
+        context=15,
+        max_results=5,
     )
 
     if hits:
@@ -54,7 +51,11 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
         result["definition"] = {
             "file": hits[0].file,
             "line": hits[0].line,
-            "code": "\n".join(hits[0].before) + "\n" + hits[0].text + "\n" + "\n".join(hits[0].after),
+            "code": "\n".join(hits[0].before)
+            + "\n"
+            + hits[0].text
+            + "\n"
+            + "\n".join(hits[0].after),
         }
         # Also show where it's used
         usage_files = rg_files(search_name, [root])
@@ -87,11 +88,7 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
 
 
 def impact(name: str, root: str = ".") -> dict:
-    """Impact chain: what breaks if I change this?
-
-    Chain: rg (find all usages) → graph (transitive dependents) → severity assessment.
-    This is the 15% tool - use before modifying anything load-bearing.
-    """
+    """Assess change impact from direct usages and transitive graph dependents."""
     search_name = name.split("::")[-1] if "::" in name else name
 
     # Step 1: Direct usages via rg
@@ -102,15 +99,21 @@ def impact(name: str, root: str = ".") -> dict:
 
     definition_hits = rg_search(
         f"(fn |struct |class |def |interface |enum |trait |pub |async ){search_name}",
-        [root], context=0, max_results=1,
+        [root],
+        context=0,
+        max_results=1,
     )
     if definition_hits:
         try:
-            semantic = semantic_inspect_symbol(search_name, definition_hits[0].file, definition_hits[0].line, root=root)
+            semantic = semantic_inspect_symbol(
+                search_name, definition_hits[0].file, definition_hits[0].line, root=root
+            )
         except Exception:
             semantic = None
         if semantic and semantic.get("references"):
-            files_affected = sorted({ref["path"] for ref in semantic["references"] if ref.get("path")})
+            files_affected = sorted(
+                {ref["path"] for ref in semantic["references"] if ref.get("path")}
+            )
             total_references = len(semantic["references"])
             reference_source = "lsp"
 
@@ -118,6 +121,7 @@ def impact(name: str, root: str = ".") -> dict:
     dependents = []
     try:
         from ._shared import get_grapher
+
         grapher = get_grapher()
         dependents = grapher.get_dependents(name)
     except Exception:
@@ -149,17 +153,11 @@ def impact(name: str, root: str = ".") -> dict:
 
 
 def discover(query: str, root: str = ".", hot_index: Optional[HotIndex] = None) -> dict:
-    """Discovery chain: find relevant code when you don't know the exact name.
-
-    Chain: rg (literal search) → semantic (Qdrant) → merge + deduplicate → rank.
-    Combines exact text matching with semantic similarity.
-    The 5% tool - for exploration and pattern-finding.
-    """
+    """Find relevant code by merging text and semantic search results."""
     # Step 1: rg for exact/regex matches
     rg_hits = rg_search(query, [root], context=5, max_results=10)
     rg_results = [
-        {"source": "rg", "file": h.file, "line": h.line,
-         "text": h.text, "score": 1.0}
+        {"source": "rg", "file": h.file, "line": h.line, "text": h.text, "score": 1.0}
         for h in rg_hits
     ]
 
@@ -168,8 +166,14 @@ def discover(query: str, root: str = ".", hot_index: Optional[HotIndex] = None) 
     try:
         similar = rag.read_similar(query, limit=10)
         semantic_results = [
-            {"source": "semantic", "file": s["file"], "line": s["line"],
-             "symbol": s["symbol"], "code": s["code"][:200], "score": s["score"]}
+            {
+                "source": "semantic",
+                "file": s["file"],
+                "line": s["line"],
+                "symbol": s["symbol"],
+                "code": s["code"][:200],
+                "score": s["score"],
+            }
             for s in similar
         ]
     except Exception:
@@ -220,8 +224,8 @@ def explain(name: str, root: str = ".", hot_index: Optional[HotIndex] = None) ->
         context += f"## Definition ({d['file']}:{d['line']})\n```\n{d['code']}\n```\n\n"
 
     context += f"## Impact: {impact_info['severity']}\n{impact_info['warning']}\n"
-    if impact_info['files_affected']:
-        context += "Files: " + ", ".join(f[:60] for f in impact_info['files_affected'][:5]) + "\n"
+    if impact_info["files_affected"]:
+        context += "Files: " + ", ".join(f[:60] for f in impact_info["files_affected"][:5]) + "\n"
     context += "\n"
 
     if similar.get("merged"):

@@ -1,31 +1,14 @@
-"""Embed code chunks into Qdrant via LiteLLM."""
+"""Embed code chunks and store them in Qdrant."""
 
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 import hashlib
-import os
+from dataclasses import dataclass
 
-from .parser import Symbol, ParseResult
-from .lazy import load_attr, load_module
+from .config import get_setting
+from .lazy import load_attr
+from .model_client import ModelClient
+from .parser import ParseResult
 
 COLLECTION = "tldreadme_code"
-
-# Default: talk directly to local Ollama. If LITELLM_URL is set, route through LiteLLM proxy.
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-LITELLM_URL = os.getenv("LITELLM_URL", "")
-EMBED_MODEL = os.getenv("TLDREADME_EMBED_MODEL", "ollama/nomic-embed-text")
-CHAT_MODEL = os.getenv("TLDREADME_CHAT_MODEL", "ollama/qwen2.5-coder:3b-instruct")
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-
-def _api_base():
-    """Return API base - LiteLLM proxy if configured, otherwise direct Ollama."""
-    return LITELLM_URL if LITELLM_URL else OLLAMA_URL
-
-
-def _litellm():
-    """Load litellm only when synthesis or embeddings are needed."""
-
-    return load_module("litellm")
 
 
 def _qdrant_client_cls():
@@ -44,17 +27,24 @@ def _qdrant_models():
     }
 
 
+def model_status(model: str) -> dict[str, object]:
+    """Return current provider readiness without triggering a model pull."""
+
+    return ModelClient().model_status(model)
+
+
 @dataclass
 class CodeChunk:
     """A chunk of code ready for embedding."""
+
     id: str
     file: str
     symbol_name: str
     kind: str
     language: str
-    content: str          # the actual code (body)
+    content: str  # the actual code (body)
     signature: str
-    context: str          # surrounding info (parent, module, imports)
+    context: str  # surrounding info (parent, module, imports)
     line: int
     end_line: int
 
@@ -75,51 +65,49 @@ def symbols_to_chunks(results: list[ParseResult]) -> list[CodeChunk]:
     chunks = []
     for pr in results:
         for sym in pr.symbols:
-            chunks.append(CodeChunk(
-                id=chunk_id(sym.file, sym.name, sym.line),
-                file=sym.file,
-                symbol_name=sym.name,
-                kind=sym.kind,
-                language=sym.language,
-                content=sym.body,
-                signature=sym.signature,
-                context=f"file: {sym.file}\nparent: {sym.parent or 'top-level'}\nlang: {sym.language}",
-                line=sym.line,
-                end_line=sym.end_line,
-            ))
+            chunks.append(
+                CodeChunk(
+                    id=chunk_id(sym.file, sym.name, sym.line),
+                    file=sym.file,
+                    symbol_name=sym.name,
+                    kind=sym.kind,
+                    language=sym.language,
+                    content=sym.body,
+                    signature=sym.signature,
+                    context=f"file: {sym.file}\nparent: {sym.parent or 'top-level'}\nlang: {sym.language}",
+                    line=sym.line,
+                    end_line=sym.end_line,
+                )
+            )
     return chunks
 
 
 def embed_text(text: str) -> list[float]:
     """Get embedding vector for a piece of text."""
-    resp = _litellm().embedding(
-        model=EMBED_MODEL,
-        input=[text],
-        api_base=_api_base(),
-    )
-    return resp.data[0]["embedding"]
+
+    return ModelClient().embed([text])[0]
 
 
-def _embed_one(text: str) -> list[float]:
-    """Embed a single text string."""
-    resp = _litellm().embedding(
-        model=EMBED_MODEL,
-        input=[text],
-        api_base=_api_base(),
-    )
-    return resp.data[0]["embedding"]
+def complete_chat(messages: list[dict[str, str]], *, max_tokens: int) -> str:
+    """Run a bounded chat completion after checking local model readiness."""
+
+    return ModelClient().complete(messages, max_tokens=max_tokens)
 
 
 def embed_batch(texts: list[str], **_kwargs) -> list[list[float]]:
-    """Embed texts sequentially (Ollama only accepts single inputs)."""
-    return [_embed_one(t) for t in texts]
+    """Embed a batch through the configured provider."""
+
+    return ModelClient().embed(texts)
 
 
 class CodeEmbedder:
     """Manages embedding storage in Qdrant."""
 
     def __init__(self, qdrant_url: str = None):
-        self.client = _qdrant_client_cls()(url=qdrant_url or QDRANT_URL)
+        self.client = _qdrant_client_cls()(
+            url=qdrant_url or get_setting("QDRANT_URL"),
+            check_compatibility=False,
+        )
         self._ensure_collection()
 
     def _ensure_collection(self):
@@ -149,10 +137,7 @@ class CodeEmbedder:
             end = min(start + slice_size, total)
             batch_chunks = chunks[start:end]
 
-            texts = [
-                f"{c.signature}\n{c.context}\n{c.content[:2000]}"
-                for c in batch_chunks
-            ]
+            texts = [f"{c.signature}\n{c.context}\n{c.content[:2000]}" for c in batch_chunks]
 
             vectors = embed_batch(texts, max_workers=1)
 
@@ -202,7 +187,4 @@ class CodeEmbedder:
             query=query_vector,
             limit=limit,
         )
-        return [
-            {**hit.payload, "score": hit.score}
-            for hit in results.points
-        ]
+        return [{**hit.payload, "score": hit.score} for hit in results.points]

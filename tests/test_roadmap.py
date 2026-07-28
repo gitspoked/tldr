@@ -21,7 +21,9 @@ def _stub_roadmap_dependencies(monkeypatch):
                     "goal": "Refresh generated context during watch mode.",
                     "why_now": "Generated context still drifts after init.",
                     "files": ["tldreadme/watcher.py"],
-                    "verification_commands": [".venv/bin/python -m pytest -q tests/test_generator.py"],
+                    "verification_commands": [
+                        ".venv/bin/python -m pytest -q tests/test_generator.py"
+                    ],
                 },
             ],
             "suggested_goals": "### Next Goals for Codebase Review\n\n#### Goal 1: Add local tldr audit pipeline",
@@ -105,7 +107,10 @@ def test_capture_plan_input_writes_timestamped_drop_and_refreshes_digest(monkeyp
     _stub_roadmap_dependencies(monkeypatch)
     monkeypatch.setattr(roadmap, "_timestamp", lambda: "20260323-120000")
 
-    (tmp_path / "README.md").write_text("# Demo\n\nThis project indexes repositories and guides next-step planning.\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "# Demo\n\nThis project indexes repositories and guides next-step planning.\n",
+        encoding="utf-8",
+    )
 
     result = roadmap.capture_plan_input(
         "## Notes\n\nAdd audit links https://example.com/security and keep the CLI human-first.\n",

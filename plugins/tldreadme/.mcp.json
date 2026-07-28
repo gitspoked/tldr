@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "tldreadme": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.12",
+        "--from",
+        "git+https://github.com/gitspoked/tldr.git@v0.1.3",
+        "tldr",
+        "serve"
+      ]
+    }
+  }
+}

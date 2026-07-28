@@ -5,14 +5,19 @@ These tests cover everything that doesn't need a running Qdrant/Ollama.
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
+from tldreadme import embedder
 from tldreadme.embedder import (
-    chunk_id, _chunk_id_to_int, symbols_to_chunks, CodeChunk,
+    CodeChunk,
+    _chunk_id_to_int,
+    chunk_id,
+    symbols_to_chunks,
 )
-from tldreadme.parser import parse_file, ParseResult
-
+from tldreadme.parser import parse_file
 
 # ── Chunk ID ──────────────────────────────────────────────────────
+
 
 def test_chunk_id_deterministic():
     """Same input = same ID, always."""
@@ -56,13 +61,10 @@ def test_chunk_id_to_int_unique():
 
 # ── Symbols to Chunks ────────────────────────────────────────────
 
+
 def test_symbols_to_chunks():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write(
-            "def alpha():\n    pass\n\n"
-            "def beta():\n    pass\n\n"
-            "class Gamma:\n    pass\n"
-        )
+        f.write("def alpha():\n    pass\n\ndef beta():\n    pass\n\nclass Gamma:\n    pass\n")
         f.flush()
         result = parse_file(Path(f.name))
 
@@ -99,11 +101,7 @@ def test_symbols_to_chunks_no_symbols():
 
 def test_chunks_have_unique_ids():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write(
-            "def one(): pass\n"
-            "def two(): pass\n"
-            "def three(): pass\n"
-        )
+        f.write("def one(): pass\ndef two(): pass\ndef three(): pass\n")
         f.flush()
         result = parse_file(Path(f.name))
 
@@ -123,3 +121,24 @@ def test_chunk_content_is_actual_code():
     greet_chunk = next(c for c in chunks if c.symbol_name == "greet")
     assert "def greet" in greet_chunk.content
     assert "Hello" in greet_chunk.content
+
+
+def test_qdrant_client_skips_eager_compatibility_probe(monkeypatch):
+    captured = {}
+
+    class FakeQdrantClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def get_collections(self):
+            return SimpleNamespace(collections=[])
+
+    monkeypatch.setattr(embedder, "_qdrant_client_cls", lambda: FakeQdrantClient)
+
+    client = embedder.CodeEmbedder("http://127.0.0.1:6333")
+
+    assert client._collection_created is False
+    assert captured == {
+        "url": "http://127.0.0.1:6333",
+        "check_compatibility": False,
+    }

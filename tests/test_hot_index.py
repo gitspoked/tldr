@@ -4,18 +4,20 @@ import json
 import tempfile
 from pathlib import Path
 
-from tldreadme.hot_index import HotIndex, HotEntry, build_hot_index
-from tldreadme.parser import parse_file, parse_directory
-
+from tldreadme.hot_index import HotEntry, HotIndex, build_hot_index
+from tldreadme.parser import parse_directory
 
 # ── HotIndex Basics ───────────────────────────────────────────────
+
 
 def test_hot_index_lookup_hit():
     idx = HotIndex(root="/test")
     idx.entries["my_func"] = HotEntry(
-        name="my_func", kind="function",
+        name="my_func",
+        kind="function",
         locations=[{"file": "main.py", "line": 10, "definition": True}],
-        importance=5.0, hit_count=3,
+        importance=5.0,
+        hit_count=3,
     )
 
     entry = idx.lookup("my_func")
@@ -37,9 +39,11 @@ def test_hot_index_save_load():
         # Save
         idx = HotIndex(root="/project")
         idx.entries["alpha"] = HotEntry(
-            name="alpha", kind="function",
+            name="alpha",
+            kind="function",
             locations=[{"file": "a.py", "line": 1, "definition": True}],
-            importance=10.0, hit_count=5,
+            importance=10.0,
+            hit_count=5,
         )
         idx.top_files = ["a.py", "b.py"]
         idx.save(path)
@@ -76,6 +80,7 @@ def test_hot_index_load_corrupt():
 
 
 # ── build_hot_index ───────────────────────────────────────────────
+
 
 def test_build_hot_index_from_parsed():
     with tempfile.TemporaryDirectory() as tmpdir:

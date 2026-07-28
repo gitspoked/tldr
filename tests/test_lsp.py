@@ -1,12 +1,17 @@
 """Tests for LSP integration."""
 
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
 
 from tldreadme import chains
-from tldreadme.lsp import LspServer, document_diagnostics, resolve_lsp_server, semantic_inspect, workspace_symbols
-
+from tldreadme.lsp import (
+    LspServer,
+    document_diagnostics,
+    resolve_lsp_server,
+    semantic_inspect,
+    workspace_symbols,
+)
 
 FAKE_LSP_SERVER = r"""
 import json
@@ -293,9 +298,21 @@ def test_know_includes_semantic_overlay(monkeypatch):
         "semantic_inspect_symbol",
         lambda *_args, **_kwargs: {
             "hover": "hover text",
-            "definitions": [{"path": "/tmp/example.py", "line": 3, "column": 5, "end_line": 3, "end_column": 11}],
-            "references": [{"path": "/tmp/example.py", "line": 8, "column": 12, "end_line": 8, "end_column": 18}],
-            "document_symbols": [{"name": "sample", "line": 3, "column": 5, "end_line": 3, "end_column": 11}],
+            "definitions": [
+                {"path": "/tmp/example.py", "line": 3, "column": 5, "end_line": 3, "end_column": 11}
+            ],
+            "references": [
+                {
+                    "path": "/tmp/example.py",
+                    "line": 8,
+                    "column": 12,
+                    "end_line": 8,
+                    "end_column": 18,
+                }
+            ],
+            "document_symbols": [
+                {"name": "sample", "line": 3, "column": 5, "end_line": 3, "end_column": 11}
+            ],
             "server_command": ["pyright-langserver", "--stdio"],
         },
     )
@@ -312,7 +329,17 @@ def test_impact_prefers_lsp_references(monkeypatch):
         chains,
         "rg_search",
         lambda *_args, **_kwargs: [
-            type("Hit", (), {"file": "/tmp/example.py", "line": 3, "text": "def sample():", "before": [], "after": []})()
+            type(
+                "Hit",
+                (),
+                {
+                    "file": "/tmp/example.py",
+                    "line": 3,
+                    "text": "def sample():",
+                    "before": [],
+                    "after": [],
+                },
+            )()
         ],
     )
     monkeypatch.setattr(

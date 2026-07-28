@@ -2,12 +2,25 @@
 
 import asyncio
 import json
+import sys
 import time
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server import Server
-from mcp.types import EmbeddedResource, GetPromptResult, Prompt, PromptArgument, PromptMessage, Resource, ResourceTemplate, TextContent, TextResourceContents, Tool
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.types import (
+    EmbeddedResource,
+    GetPromptResult,
+    Prompt,
+    PromptArgument,
+    PromptMessage,
+    Resource,
+    ResourceTemplate,
+    TextContent,
+    TextResourceContents,
+    Tool,
+    ToolAnnotations,
+)
 
 from .lazy import load_module
 
@@ -47,6 +60,12 @@ def _coding_tools():
     """Load the router-friendly coding tools only when needed."""
 
     return load_module("tldreadme.coding_tools")
+
+
+def _history():
+    """Load Git history search only when needed."""
+
+    return load_module("tldreadme.history")
 
 
 def _children():
@@ -98,77 +117,510 @@ ROUTER_TOOL_NAMES = [
 ]
 
 TOOL_METADATA = {
-    "repo_next_action": _tool_meta(category="coordination", priority="preferred", read_only=True, latency="fast", backends=["workboard", "children", "summary"], profiles=["router", "full"], fallback_to=["repo_lookup", "change_plan"]),
-    "repo_lookup": _tool_meta(category="lookup", priority="preferred", read_only=True, latency="fast", backends=["filesystem", "rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary"], profiles=["router", "full"], fallback_to=["repo_next_action"]),
-    "read_symbol": _tool_meta(category="read", priority="advanced", read_only=True, latency="fast", backends=["graph", "hot_index"], profiles=["full"], fallback_to=["know"]),
-    "read_similar": _tool_meta(category="read", priority="advanced", read_only=True, latency="medium", backends=["vector"], profiles=["full"], fallback_to=["pattern_search"]),
-    "read_module": _tool_meta(category="read", priority="advanced", read_only=True, latency="fast", backends=["graph"], profiles=["full"], fallback_to=["scan_context"]),
-    "read_flow": _tool_meta(category="read", priority="advanced", read_only=True, latency="medium", backends=["graph"], profiles=["full"], fallback_to=["impact"]),
-    "read_depends": _tool_meta(category="read", priority="advanced", read_only=True, latency="fast", backends=["graph"], profiles=["full"], fallback_to=["impact"]),
-    "read_recent": _tool_meta(category="read", priority="advanced", read_only=True, latency="fast", backends=["git", "summary"], profiles=["full"], fallback_to=["scan_context"]),
-    "read_grep": _tool_meta(category="search", priority="advanced", read_only=True, latency="fast", backends=["rg"], profiles=["full"], fallback_to=["search_context"]),
-    "read_grep_files": _tool_meta(category="search", priority="advanced", read_only=True, latency="fast", backends=["rg"], profiles=["full"], fallback_to=["search_context"]),
-    "read_semantic": _tool_meta(category="semantic", priority="advanced", read_only=True, latency="medium", backends=["lsp"], profiles=["full"], fallback_to=["edit_context"]),
-    "read_workspace_symbols": _tool_meta(category="semantic", priority="advanced", read_only=True, latency="medium", backends=["lsp"], profiles=["full"], fallback_to=["search_context"]),
-    "scan_context": _tool_meta(category="orientation", priority="specialist", read_only=True, latency="fast", backends=["filesystem", "workboard", "summary", "children"], profiles=["full"]),
-    "search_context": _tool_meta(category="orientation", priority="specialist", read_only=True, latency="fast", backends=["rg", "docs", "workboard", "children", "summary"], profiles=["full"], fallback_to=["scan_context"]),
-    "edit_context": _tool_meta(category="coding", priority="specialist", read_only=True, latency="medium", backends=["asts", "lsp", "workboard"], profiles=["full"], fallback_to=["know", "search_context"]),
-    "change_plan": _tool_meta(category="planning", priority="preferred", read_only=True, latency="medium", backends=["rg", "workboard", "tests"], profiles=["router", "full"], fallback_to=["repo_lookup"]),
-    "test_map": _tool_meta(category="verification", priority="specialist", read_only=True, latency="fast", backends=["filesystem", "rg"], profiles=["full"], fallback_to=["change_plan"]),
-    "verify_change": _tool_meta(category="verification", priority="preferred", read_only=False, latency="medium", backends=["workboard", "tests", "subprocess"], profiles=["router", "full"], fallback_to=["repo_lookup", "change_plan"]),
-    "pattern_search": _tool_meta(category="coding", priority="specialist", read_only=True, latency="medium", backends=["rg", "vector", "semantic"], profiles=["full"], fallback_to=["search_context"]),
-    "diagnostics_here": _tool_meta(category="semantic", priority="specialist", read_only=True, latency="medium", backends=["lsp"], profiles=["full"], fallback_to=["edit_context"]),
-    "plan_list": _tool_meta(category="workboard", priority="advanced", read_only=True, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=["plan_current"]),
-    "plan_current": _tool_meta(category="workboard", priority="specialist", read_only=True, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=["repo_next_action"]),
-    "plan_create": _tool_meta(category="workboard", priority="advanced", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=[]),
-    "plan_update": _tool_meta(category="workboard", priority="advanced", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=[]),
-    "plan_archive": _tool_meta(category="workboard", priority="advanced", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=[]),
-    "task_add": _tool_meta(category="workboard", priority="advanced", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=[]),
-    "task_update": _tool_meta(category="workboard", priority="advanced", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=[]),
-    "task_complete": _tool_meta(category="workboard", priority="advanced", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=[]),
-    "session_note": _tool_meta(category="workboard", priority="advanced", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=["session_update"]),
-    "session_update": _tool_meta(category="workboard", priority="specialist", read_only=False, latency="fast", backends=["workboard"], profiles=["full"], fallback_to=[]),
-    "know": _tool_meta(category="symbol", priority="specialist", read_only=True, latency="fast", backends=["hot_index", "rg", "graph"], profiles=["full"], fallback_to=["search_context"]),
-    "impact": _tool_meta(category="symbol", priority="specialist", read_only=True, latency="fast", backends=["rg", "graph"], profiles=["full"], fallback_to=["know"]),
-    "discover": _tool_meta(category="discovery", priority="advanced", read_only=True, latency="medium", backends=["rg", "vector"], profiles=["full"], fallback_to=["search_context"]),
-    "explain": _tool_meta(category="synthesis", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph", "vector"], profiles=["full"], fallback_to=["know", "impact"]),
-    "tldr": _tool_meta(category="generation", priority="advanced", read_only=True, latency="slow", backends=["llm", "graph", "vector"], profiles=["full"], fallback_to=[]),
-    "suggest_goals": _tool_meta(category="planning", priority="advanced", read_only=True, latency="fast", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["repo_next_action", "repo_lookup"]),
-    "best_question": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["repo_lookup", "change_plan"]),
-    "goal_flow": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["suggest_goals", "best_question"]),
-    "auto_iterate": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "rg", "asts", "hot_index", "graph", "lsp", "workboard", "children", "summary", "tests"], profiles=["full"], fallback_to=["goal_flow"]),
-    "capture_plans": _tool_meta(category="planning", priority="advanced", read_only=False, latency="fast", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["whats_next", "current_roadmap"]),
-    "whats_next": _tool_meta(category="planning", priority="advanced", read_only=True, latency="medium", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["repo_next_action", "repo_lookup"]),
-    "current_roadmap": _tool_meta(category="planning", priority="advanced", read_only=False, latency="medium", backends=["filesystem", "workboard", "children", "summary"], profiles=["full"], fallback_to=["whats_next"]),
-    "audit_run": _tool_meta(category="security", priority="advanced", read_only=False, latency="medium", backends=["filesystem", "subprocess"], profiles=["full"], fallback_to=[]),
-    "audit_profiles": _tool_meta(category="security", priority="advanced", read_only=True, latency="fast", backends=["filesystem"], profiles=["full"], fallback_to=[]),
-    "audit_kev_refresh": _tool_meta(category="security", priority="advanced", read_only=False, latency="medium", backends=["filesystem"], profiles=["full"], fallback_to=[]),
+    "configuration_setup": _tool_meta(
+        category="configuration",
+        priority="required",
+        read_only=False,
+        latency="fast",
+        backends=["filesystem"],
+        profiles=["router", "full"],
+        fallback_to=[],
+    ),
+    "repo_next_action": _tool_meta(
+        category="coordination",
+        priority="preferred",
+        read_only=True,
+        latency="fast",
+        backends=["workboard", "children", "summary"],
+        profiles=["router", "full"],
+        fallback_to=["repo_lookup", "change_plan"],
+    ),
+    "repo_lookup": _tool_meta(
+        category="lookup",
+        priority="preferred",
+        read_only=True,
+        latency="fast",
+        backends=[
+            "filesystem",
+            "rg",
+            "asts",
+            "hot_index",
+            "graph",
+            "lsp",
+            "workboard",
+            "children",
+            "summary",
+        ],
+        profiles=["router", "full"],
+        fallback_to=["repo_next_action"],
+    ),
+    "read_symbol": _tool_meta(
+        category="read",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["graph", "hot_index"],
+        profiles=["full"],
+        fallback_to=["know"],
+    ),
+    "read_similar": _tool_meta(
+        category="read",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=["vector"],
+        profiles=["full"],
+        fallback_to=["pattern_search"],
+    ),
+    "read_module": _tool_meta(
+        category="read",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["graph"],
+        profiles=["full"],
+        fallback_to=["scan_context"],
+    ),
+    "read_flow": _tool_meta(
+        category="read",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=["graph"],
+        profiles=["full"],
+        fallback_to=["impact"],
+    ),
+    "read_depends": _tool_meta(
+        category="read",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["graph"],
+        profiles=["full"],
+        fallback_to=["impact"],
+    ),
+    "read_recent": _tool_meta(
+        category="read",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["git", "summary"],
+        profiles=["full"],
+        fallback_to=["scan_context"],
+    ),
+    "history_search": _tool_meta(
+        category="search",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["git", "rg"],
+        profiles=["full"],
+        fallback_to=["search_context", "repo_lookup"],
+    ),
+    "read_grep": _tool_meta(
+        category="search",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["rg"],
+        profiles=["full"],
+        fallback_to=["search_context"],
+    ),
+    "read_grep_files": _tool_meta(
+        category="search",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["rg"],
+        profiles=["full"],
+        fallback_to=["search_context"],
+    ),
+    "read_semantic": _tool_meta(
+        category="semantic",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=["lsp"],
+        profiles=["full"],
+        fallback_to=["edit_context"],
+    ),
+    "read_workspace_symbols": _tool_meta(
+        category="semantic",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=["lsp"],
+        profiles=["full"],
+        fallback_to=["search_context"],
+    ),
+    "scan_context": _tool_meta(
+        category="orientation",
+        priority="specialist",
+        read_only=True,
+        latency="fast",
+        backends=["filesystem", "workboard", "summary", "children"],
+        profiles=["full"],
+    ),
+    "search_context": _tool_meta(
+        category="orientation",
+        priority="specialist",
+        read_only=True,
+        latency="fast",
+        backends=["rg", "docs", "workboard", "children", "summary"],
+        profiles=["full"],
+        fallback_to=["scan_context"],
+    ),
+    "edit_context": _tool_meta(
+        category="coding",
+        priority="specialist",
+        read_only=True,
+        latency="medium",
+        backends=["asts", "lsp", "workboard"],
+        profiles=["full"],
+        fallback_to=["know", "search_context"],
+    ),
+    "change_plan": _tool_meta(
+        category="planning",
+        priority="preferred",
+        read_only=True,
+        latency="medium",
+        backends=["rg", "workboard", "tests"],
+        profiles=["router", "full"],
+        fallback_to=["repo_lookup"],
+    ),
+    "test_map": _tool_meta(
+        category="verification",
+        priority="specialist",
+        read_only=True,
+        latency="fast",
+        backends=["filesystem", "rg"],
+        profiles=["full"],
+        fallback_to=["change_plan"],
+    ),
+    "verify_change": _tool_meta(
+        category="verification",
+        priority="preferred",
+        read_only=False,
+        latency="medium",
+        backends=["workboard", "tests", "subprocess"],
+        profiles=["router", "full"],
+        fallback_to=["repo_lookup", "change_plan"],
+    ),
+    "pattern_search": _tool_meta(
+        category="coding",
+        priority="specialist",
+        read_only=True,
+        latency="medium",
+        backends=["rg", "vector", "semantic"],
+        profiles=["full"],
+        fallback_to=["search_context"],
+    ),
+    "diagnostics_here": _tool_meta(
+        category="semantic",
+        priority="specialist",
+        read_only=True,
+        latency="medium",
+        backends=["lsp"],
+        profiles=["full"],
+        fallback_to=["edit_context"],
+    ),
+    "plan_list": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=["plan_current"],
+    ),
+    "plan_current": _tool_meta(
+        category="workboard",
+        priority="specialist",
+        read_only=True,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=["repo_next_action"],
+    ),
+    "plan_create": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "plan_update": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "plan_archive": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "task_add": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "task_update": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "task_complete": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "session_note": _tool_meta(
+        category="workboard",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=["session_update"],
+    ),
+    "session_update": _tool_meta(
+        category="workboard",
+        priority="specialist",
+        read_only=False,
+        latency="fast",
+        backends=["workboard"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "know": _tool_meta(
+        category="symbol",
+        priority="specialist",
+        read_only=True,
+        latency="fast",
+        backends=["hot_index", "rg", "graph"],
+        profiles=["full"],
+        fallback_to=["search_context"],
+    ),
+    "impact": _tool_meta(
+        category="symbol",
+        priority="specialist",
+        read_only=True,
+        latency="fast",
+        backends=["rg", "graph"],
+        profiles=["full"],
+        fallback_to=["know"],
+    ),
+    "discover": _tool_meta(
+        category="discovery",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=["rg", "vector"],
+        profiles=["full"],
+        fallback_to=["search_context"],
+    ),
+    "explain": _tool_meta(
+        category="synthesis",
+        priority="advanced",
+        read_only=True,
+        latency="slow",
+        backends=["llm", "graph", "vector"],
+        profiles=["full"],
+        fallback_to=["know", "impact"],
+    ),
+    "tldr": _tool_meta(
+        category="generation",
+        priority="advanced",
+        read_only=True,
+        latency="slow",
+        backends=["llm", "graph", "vector"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "suggest_goals": _tool_meta(
+        category="planning",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["filesystem", "workboard", "children", "summary"],
+        profiles=["full"],
+        fallback_to=["repo_next_action", "repo_lookup"],
+    ),
+    "best_question": _tool_meta(
+        category="planning",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=[
+            "rg",
+            "asts",
+            "hot_index",
+            "graph",
+            "lsp",
+            "workboard",
+            "children",
+            "summary",
+            "tests",
+        ],
+        profiles=["full"],
+        fallback_to=["repo_lookup", "change_plan"],
+    ),
+    "goal_flow": _tool_meta(
+        category="planning",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=[
+            "filesystem",
+            "rg",
+            "asts",
+            "hot_index",
+            "graph",
+            "lsp",
+            "workboard",
+            "children",
+            "summary",
+            "tests",
+        ],
+        profiles=["full"],
+        fallback_to=["suggest_goals", "best_question"],
+    ),
+    "auto_iterate": _tool_meta(
+        category="planning",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=[
+            "filesystem",
+            "rg",
+            "asts",
+            "hot_index",
+            "graph",
+            "lsp",
+            "workboard",
+            "children",
+            "summary",
+            "tests",
+        ],
+        profiles=["full"],
+        fallback_to=["goal_flow"],
+    ),
+    "capture_plans": _tool_meta(
+        category="planning",
+        priority="advanced",
+        read_only=False,
+        latency="fast",
+        backends=["filesystem", "workboard", "children", "summary"],
+        profiles=["full"],
+        fallback_to=["whats_next", "current_roadmap"],
+    ),
+    "whats_next": _tool_meta(
+        category="planning",
+        priority="advanced",
+        read_only=True,
+        latency="medium",
+        backends=["filesystem", "workboard", "children", "summary"],
+        profiles=["full"],
+        fallback_to=["repo_next_action", "repo_lookup"],
+    ),
+    "current_roadmap": _tool_meta(
+        category="planning",
+        priority="advanced",
+        read_only=False,
+        latency="medium",
+        backends=["filesystem", "workboard", "children", "summary"],
+        profiles=["full"],
+        fallback_to=["whats_next"],
+    ),
+    "audit_run": _tool_meta(
+        category="security",
+        priority="advanced",
+        read_only=False,
+        latency="medium",
+        backends=["filesystem", "subprocess"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "audit_profiles": _tool_meta(
+        category="security",
+        priority="advanced",
+        read_only=True,
+        latency="fast",
+        backends=["filesystem"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "audit_kev_refresh": _tool_meta(
+        category="security",
+        priority="advanced",
+        read_only=False,
+        latency="medium",
+        backends=["filesystem"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
 }
 
 TOOL_REQUIRED_BACKENDS = {
     "read_symbol": ["vector", "graph"],
-    "read_similar": ["vector"],
+    "read_similar": ["vector", "embedding"],
     "read_module": ["graph"],
     "read_flow": ["graph"],
     "read_depends": ["graph"],
     "read_recent": ["git"],
+    "history_search": ["git", "rg"],
     "read_grep": ["rg"],
     "read_grep_files": ["rg"],
     "read_semantic": ["lsp"],
     "read_workspace_symbols": ["lsp"],
     "search_context": ["rg"],
     "diagnostics_here": ["lsp"],
+    "discover": ["rg", "vector", "embedding"],
+    "explain": ["graph", "vector", "embedding", "llm"],
     "tldr": ["graph", "llm"],
 }
 
 _CAPABILITY_CACHE: dict[str, object] = {"expires_at": 0.0, "value": None}
 
 
+def _invalidate_capability_cache() -> None:
+    """Drop cached setup and backend state after configuration changes."""
+
+    _CAPABILITY_CACHE["expires_at"] = 0.0
+    _CAPABILITY_CACHE["value"] = None
+
+
 def _runtime_capabilities(force_refresh: bool = False) -> dict[str, object]:
     """Return a short-lived cached capability snapshot."""
 
     now = time.monotonic()
-    if not force_refresh and _CAPABILITY_CACHE["value"] and now < float(_CAPABILITY_CACHE["expires_at"]):
+    if (
+        not force_refresh
+        and _CAPABILITY_CACHE["value"]
+        and now < float(_CAPABILITY_CACHE["expires_at"])
+    ):
         return dict(_CAPABILITY_CACHE["value"])
 
     runtime_module = _runtime()
@@ -192,12 +644,38 @@ def _missing_backends_for_tool(name: str, capabilities: dict[str, object]) -> li
     return [backend for backend in required if not backend_state.get(backend, False)]
 
 
-def _tool_names_for_profile(tool_profile: str = DEFAULT_TOOL_PROFILE, capabilities: dict[str, object] | None = None) -> list[str]:
+def _missing_backend_details(name: str, capabilities: dict[str, object]) -> dict[str, object]:
+    """Return structured readiness reasons for a tool's missing backends."""
+
+    details = capabilities.get("backend_details", {})
+    if not isinstance(details, dict):
+        details = {}
+    return {
+        backend: details.get(
+            backend,
+            {"status": "unavailable", "reason": f"Backend `{backend}` is not ready."},
+        )
+        for backend in _missing_backends_for_tool(name, capabilities)
+    }
+
+
+def _configuration_required(capabilities: dict[str, object]) -> bool:
+    """Return whether a live runtime explicitly reports incomplete setup."""
+
+    configuration = capabilities.get("configuration")
+    return isinstance(configuration, dict) and not configuration.get("configured", False)
+
+
+def _tool_names_for_profile(
+    tool_profile: str = DEFAULT_TOOL_PROFILE, capabilities: dict[str, object] | None = None
+) -> list[str]:
     """Return exposed tool names for the requested profile."""
 
     capabilities = capabilities or _runtime_capabilities()
+    if _configuration_required(capabilities):
+        return ["configuration_setup"]
     if tool_profile == "full":
-        names = list(TOOL_METADATA)
+        names = [name for name in TOOL_METADATA if name != "configuration_setup"]
     else:
         names = [name for name in ROUTER_TOOL_NAMES if name in TOOL_METADATA]
     return [name for name in names if not _missing_backends_for_tool(name, capabilities)]
@@ -229,7 +707,9 @@ def _routing_signals() -> dict[str, object]:
         children = _children().list_children(include_ignored=True)
     except Exception:
         children = {}
-    signals["unknown_children"] = sum(1 for child in children.get("children", []) if child.get("status") == "unknown")
+    signals["unknown_children"] = sum(
+        1 for child in children.get("children", []) if child.get("status") == "unknown"
+    )
 
     return signals
 
@@ -272,10 +752,16 @@ def _ordered_tool_names_for_profile(
 ) -> list[str]:
     """Return exposed tool names in recommendation order."""
 
-    return _recommended_sequence(tool_profile, capabilities=capabilities, routing_signals=routing_signals)
+    return _recommended_sequence(
+        tool_profile, capabilities=capabilities, routing_signals=routing_signals
+    )
 
 
-def _tool_is_exposed(name: str, tool_profile: str = DEFAULT_TOOL_PROFILE, capabilities: dict[str, object] | None = None) -> bool:
+def _tool_is_exposed(
+    name: str,
+    tool_profile: str = DEFAULT_TOOL_PROFILE,
+    capabilities: dict[str, object] | None = None,
+) -> bool:
     """Return whether a tool is exposed for the current profile."""
 
     return name in set(_tool_names_for_profile(tool_profile, capabilities=capabilities))
@@ -290,35 +776,85 @@ def _filter_tools_for_profile(
     """Filter MCP tools down to the requested exposure profile."""
 
     capabilities = capabilities or _runtime_capabilities()
-    ordered_names = _ordered_tool_names_for_profile(tool_profile, capabilities=capabilities, routing_signals=routing_signals)
+    ordered_names = _ordered_tool_names_for_profile(
+        tool_profile, capabilities=capabilities, routing_signals=routing_signals
+    )
     allowed = set(ordered_names)
     ordered = [tool for tool in tools if tool.name in allowed]
     ordered.sort(key=lambda tool: ordered_names.index(tool.name))
     return ordered
 
 
-def _tooling_payload(tool_profile: str = DEFAULT_TOOL_PROFILE, capabilities: dict[str, object] | None = None) -> dict:
+def _annotate_tools(tools: list[Tool]) -> list[Tool]:
+    """Attach standard MCP behavior hints from the tool catalog."""
+
+    annotated = []
+    for tool in tools:
+        metadata = TOOL_METADATA[tool.name]
+        read_only = bool(metadata["read_only"])
+        annotated.append(
+            tool.model_copy(
+                update={
+                    "annotations": ToolAnnotations(
+                        title=tool.name.replace("_", " ").title(),
+                        readOnlyHint=read_only,
+                        destructiveHint=False,
+                        idempotentHint=True if read_only else None,
+                        openWorldHint=tool.name in {"audit_kev_refresh", "audit_run"},
+                    )
+                }
+            )
+        )
+    return annotated
+
+
+def _tooling_payload(
+    tool_profile: str = DEFAULT_TOOL_PROFILE, capabilities: dict[str, object] | None = None
+) -> dict:
     """Return explicit routing metadata and the current exposure split."""
 
     capabilities = capabilities or _runtime_capabilities()
     routing_signals = _routing_signals()
-    exposed_names = _ordered_tool_names_for_profile(tool_profile, capabilities=capabilities, routing_signals=routing_signals)
-    suppressed_names = [name for name in TOOL_METADATA if _missing_backends_for_tool(name, capabilities)]
-    deferred_names = [name for name in TOOL_METADATA if name not in exposed_names and name not in suppressed_names]
+    exposed_names = _ordered_tool_names_for_profile(
+        tool_profile, capabilities=capabilities, routing_signals=routing_signals
+    )
+    setup_required = _configuration_required(capabilities)
+    candidate_names = [
+        name for name in TOOL_METADATA if setup_required or name != "configuration_setup"
+    ]
+    suppressed_names = [
+        name for name in candidate_names if _missing_backends_for_tool(name, capabilities)
+    ]
+    deferred_names = [
+        name
+        for name in candidate_names
+        if name not in exposed_names and name not in suppressed_names
+    ]
     coding_tools_module = _coding_tools()
     return {
         "active_profile": tool_profile,
+        "configuration": capabilities.get("configuration", {}),
         "router_contract_version": coding_tools_module.ROUTER_CONTRACT_VERSION,
         "router_contract_tools": list(coding_tools_module.ROUTER_TOP_LEVEL_SEQUENCE),
         "capabilities": capabilities,
         "routing_signals": routing_signals,
-        "recommended_sequence": _recommended_sequence(tool_profile, capabilities=capabilities, routing_signals=routing_signals),
+        "recommended_sequence": _recommended_sequence(
+            tool_profile, capabilities=capabilities, routing_signals=routing_signals
+        ),
         "exposed_tools": [
-            {**TOOL_METADATA[name], "name": name, "required_backends": TOOL_REQUIRED_BACKENDS.get(name, [])}
+            {
+                **TOOL_METADATA[name],
+                "name": name,
+                "required_backends": TOOL_REQUIRED_BACKENDS.get(name, []),
+            }
             for name in exposed_names
         ],
         "deferred_tools": [
-            {**TOOL_METADATA[name], "name": name, "required_backends": TOOL_REQUIRED_BACKENDS.get(name, [])}
+            {
+                **TOOL_METADATA[name],
+                "name": name,
+                "required_backends": TOOL_REQUIRED_BACKENDS.get(name, []),
+            }
             for name in deferred_names
         ],
         "suppressed_tools": [
@@ -486,7 +1022,9 @@ def _list_prompt_definitions() -> list[Prompt]:
             name="resume-session",
             description="Resume the current repository plan using the local workboard session state.",
             arguments=[
-                PromptArgument(name="plan_id", description="Optional explicit plan id", required=False),
+                PromptArgument(
+                    name="plan_id", description="Optional explicit plan id", required=False
+                ),
             ],
         ),
         Prompt(
@@ -508,7 +1046,11 @@ def _list_prompt_definitions() -> list[Prompt]:
     ]
 
 
-def _read_resource_text(uri: str, tool_profile: str = DEFAULT_TOOL_PROFILE, capabilities: dict[str, object] | None = None) -> str:
+def _read_resource_text(
+    uri: str,
+    tool_profile: str = DEFAULT_TOOL_PROFILE,
+    capabilities: dict[str, object] | None = None,
+) -> str:
     """Resolve a repo:// resource URI into JSON text."""
 
     capabilities = capabilities or _runtime_capabilities()
@@ -572,7 +1114,9 @@ def _read_resource_text(uri: str, tool_profile: str = DEFAULT_TOOL_PROFILE, capa
         root = query.get("root", [None])[0]
         include_references = query.get("include_references", ["true"])[0].lower() != "false"
         return json.dumps(
-            _lsp().semantic_inspect(path_value, line, column, root=root, include_references=include_references),
+            _lsp().semantic_inspect(
+                path_value, line, column, root=root, include_references=include_references
+            ),
             indent=2,
             default=str,
         )
@@ -612,7 +1156,9 @@ def _embedded_resource_message(uri: str, text: str) -> PromptMessage:
     )
 
 
-def _build_prompt(name: str, arguments: dict[str, str] | None, tool_profile: str = DEFAULT_TOOL_PROFILE) -> GetPromptResult:
+def _build_prompt(
+    name: str, arguments: dict[str, str] | None, tool_profile: str = DEFAULT_TOOL_PROFILE
+) -> GetPromptResult:
     """Build a prompt result backed by repository resources."""
 
     arguments = arguments or {}
@@ -702,7 +1248,11 @@ def _build_prompt(name: str, arguments: dict[str, str] | None, tool_profile: str
         ]
         if plan_id:
             plan_uri = f"repo://plan/{quote(plan_id, safe='')}"
-            messages.append(_embedded_resource_message(plan_uri, _read_resource_text(plan_uri, tool_profile=tool_profile)))
+            messages.append(
+                _embedded_resource_message(
+                    plan_uri, _read_resource_text(plan_uri, tool_profile=tool_profile)
+                )
+            )
         return GetPromptResult(
             description="Resume the current workboard session.",
             messages=messages,
@@ -725,7 +1275,9 @@ def _build_prompt(name: str, arguments: dict[str, str] | None, tool_profile: str
                         ),
                     ),
                 ),
-                _embedded_resource_message(resource_uri, _read_resource_text(resource_uri, tool_profile=tool_profile)),
+                _embedded_resource_message(
+                    resource_uri, _read_resource_text(resource_uri, tool_profile=tool_profile)
+                ),
             ],
         )
 
@@ -746,7 +1298,9 @@ def _build_prompt(name: str, arguments: dict[str, str] | None, tool_profile: str
                         ),
                     ),
                 ),
-                _embedded_resource_message(task_uri, _read_resource_text(task_uri, tool_profile=tool_profile)),
+                _embedded_resource_message(
+                    task_uri, _read_resource_text(task_uri, tool_profile=tool_profile)
+                ),
             ],
         )
 
@@ -769,7 +1323,12 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
     @server.read_resource()
     async def read_resource(uri) -> list[ReadResourceContents]:
         capabilities = _runtime_capabilities()
-        return [ReadResourceContents(_read_resource_text(str(uri), tool_profile=tool_profile, capabilities=capabilities), mime_type="application/json")]
+        return [
+            ReadResourceContents(
+                _read_resource_text(str(uri), tool_profile=tool_profile, capabilities=capabilities),
+                mime_type="application/json",
+            )
+        ]
 
     @server.list_prompts()
     async def list_prompts() -> list[Prompt]:
@@ -784,16 +1343,62 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
         capabilities = _runtime_capabilities()
         tools = [
             Tool(
-                name="read_symbol",
+                name="configuration_setup",
                 description=(
-                    "Get EVERYTHING about a symbol (function, class, struct): "
-                    "its full source code, who calls it, what it calls, "
-                    "what depends on it. Returns actual code, not just references."
+                    "SETUP REQUIRED. TLDRReadme has not been configured yet. "
+                    "Call without arguments for instructions, or pass a provider and explicit "
+                    "cloud-inference consent to configure the local runtime. Provider credentials "
+                    "are never stored. Restart the Codex or Claude plugin after configuration."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Symbol name (function, class, struct)"},
+                        "provider": {
+                            "type": "string",
+                            "enum": ["ollama", "litellm"],
+                        },
+                        "ollama_url": {"type": "string"},
+                        "litellm_url": {"type": "string"},
+                        "embed_model": {"type": "string"},
+                        "chat_model": {"type": "string"},
+                        "qdrant_url": {"type": "string"},
+                        "falkordb_url": {"type": "string"},
+                        "tool_profile": {
+                            "type": "string",
+                            "enum": ["router", "full"],
+                            "default": "router",
+                        },
+                        "allow_cloud_non_code": {"type": "boolean", "default": False},
+                        "cloud_subscriptions": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["codex", "claude", "gemini"],
+                            },
+                            "default": [],
+                        },
+                        "allow_cloud_code": {"type": "boolean", "default": False},
+                        "acknowledge_cloud_warning": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Required when either cloud inference permission is enabled.",
+                        },
+                    },
+                },
+            ),
+            Tool(
+                name="read_symbol",
+                description=(
+                    "Return a symbol's source, callers, callees, and dependents from "
+                    "the indexed vector and graph stores."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Symbol name (function, class, struct)",
+                        },
                     },
                     "required": ["name"],
                 },
@@ -801,9 +1406,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="read_similar",
                 description=(
-                    "Find code that does similar things. Returns the ACTUAL SOURCE CODE "
-                    "of similar functions/classes so you can see the pattern. "
-                    "Use this to understand how something is typically done in this codebase."
+                    "Find semantically similar functions and classes, including their "
+                    "source. Use this to compare established patterns in the repository."
                 ),
                 inputSchema={
                     "type": "object",
@@ -820,8 +1424,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="read_module",
                 description=(
-                    "Get the full map of a module/directory: every symbol, its kind, "
-                    "its signature, organized by file. Instant understanding of a module."
+                    "Return the indexed symbols and signatures for a module or directory, "
+                    "organized by file."
                 ),
                 inputSchema={
                     "type": "object",
@@ -834,8 +1438,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="read_flow",
                 description=(
-                    "Trace execution flow from an entry point. Shows the chain of "
-                    "function calls from start to end, with the actual code at each step."
+                    "Trace the indexed call graph outward from an entry-point symbol "
+                    "to the requested depth."
                 ),
                 inputSchema={
                     "type": "object",
@@ -849,13 +1453,15 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="read_depends",
                 description=(
-                    "What breaks if you change this? Shows everything that depends on "
-                    "a symbol - callers, importers, transitive dependents."
+                    "Return callers, importers, and transitive dependents for an indexed symbol."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Symbol name to check dependents for"},
+                        "name": {
+                            "type": "string",
+                            "description": "Symbol name to check dependents for",
+                        },
                     },
                     "required": ["name"],
                 },
@@ -863,23 +1469,78 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="read_recent",
                 description=(
-                    "What changed recently in the indexed codebase. Shows recently "
-                    "modified symbols with their diffs."
+                    "Return files changed in recent Git commits and symbols parsed from "
+                    "their current contents."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "scope": {"type": "string", "description": "Scope to directory (optional)"},
-                        "days": {"type": "integer", "description": "How many days back", "default": 7},
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days back",
+                            "default": 7,
+                        },
                     },
+                },
+            ),
+            Tool(
+                name="history_search",
+                description=(
+                    "Search bounded Git commit subjects and bodies. Git emits structured "
+                    "records, ripgrep narrows candidates, and Unicode-aware whole-word "
+                    "ranking removes raw substring noise. Supports older history, date "
+                    "bounds, path scope, and all refs."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Text, Unicode character, alias, or code point to find",
+                        },
+                        "root": {"type": "string", "description": "Repository root (optional)"},
+                        "scope": {
+                            "type": "string",
+                            "description": "Optional repository-relative path scope",
+                        },
+                        "all_refs": {
+                            "type": "boolean",
+                            "description": "Search all refs instead of current reachable history",
+                            "default": False,
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "Optional Git date lower bound",
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "Optional Git date upper bound",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum ranked results",
+                            "default": 10,
+                        },
+                        "max_commits": {
+                            "type": "integer",
+                            "description": "Maximum commits examined",
+                            "default": 10000,
+                        },
+                        "timeout_seconds": {
+                            "type": "number",
+                            "description": "Subprocess timeout, capped at 30 seconds",
+                            "default": 5.0,
+                        },
+                    },
+                    "required": ["query"],
                 },
             ),
             Tool(
                 name="tldr",
                 description=(
-                    "TL;DR of a module, crate, or directory. RAG-powered natural language "
-                    "summary: what it does, key entry points, architecture. "
-                    "The god tool - instant understanding of any part of the codebase."
+                    "Generate a concise summary of an indexed module or directory, "
+                    "including its purpose, architecture, and entry points."
                 ),
                 inputSchema={
                     "type": "object",
@@ -916,7 +1577,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "type": "object",
                     "properties": {
                         "goal": {"type": "string", "description": "What you want to achieve"},
-                        "path": {"type": "string", "description": "Scope to module/directory (optional)"},
+                        "path": {
+                            "type": "string",
+                            "description": "Scope to module/directory (optional)",
+                        },
                     },
                     "required": ["goal"],
                 },
@@ -948,7 +1612,11 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "properties": {
                         "path": {"type": "string", "description": "Module/directory to analyze"},
                         "goal": {"type": "string", "description": "Optional starting goal"},
-                        "rounds": {"type": "integer", "description": "Iteration count", "default": 2},
+                        "rounds": {
+                            "type": "integer",
+                            "description": "Iteration count",
+                            "default": 2,
+                        },
                     },
                     "required": ["path"],
                 },
@@ -962,7 +1630,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "text": {"type": "string", "description": "Planning notes, links, examples, or pasted context"},
+                        "text": {
+                            "type": "string",
+                            "description": "Planning notes, links, examples, or pasted context",
+                        },
                         "root": {"type": "string", "description": "Repository root (optional)"},
                     },
                     "required": ["text"],
@@ -1006,14 +1677,26 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "category": {"type": "string", "enum": ["deps", "code", "secrets", "llm", "all"]},
+                        "category": {
+                            "type": "string",
+                            "enum": ["deps", "code", "secrets", "llm", "all"],
+                        },
                         "root": {"type": "string", "description": "Repository root (optional)"},
                         "dry_run": {"type": "boolean", "default": False},
-                        "garak_config": {"type": "string", "description": "Optional Garak config path"},
+                        "garak_config": {
+                            "type": "string",
+                            "description": "Optional Garak config path",
+                        },
                         "offline": {"type": "boolean", "default": False},
                         "download_offline_db": {"type": "boolean", "default": False},
-                        "kev_catalog_path": {"type": "string", "description": "Optional local KEV JSON path"},
-                        "profile": {"type": "string", "enum": ["owasp-web", "owasp-api", "owasp-llm", "owasp-mcp"]},
+                        "kev_catalog_path": {
+                            "type": "string",
+                            "description": "Optional local KEV JSON path",
+                        },
+                        "profile": {
+                            "type": "string",
+                            "enum": ["owasp-web", "owasp-api", "owasp-llm", "owasp-mcp"],
+                        },
                         "prefer_snyk": {"type": "boolean", "default": False},
                         "save_report": {"type": "boolean", "default": False},
                     },
@@ -1034,7 +1717,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "output_path": {"type": "string", "description": "Optional custom local path for the KEV JSON cache"},
+                        "output_path": {
+                            "type": "string",
+                            "description": "Optional custom local path for the KEV JSON cache",
+                        },
                         "url": {"type": "string", "description": "Optional mirrored KEV feed URL"},
                     },
                 },
@@ -1051,11 +1737,29 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "type": "object",
                     "properties": {
                         "pattern": {"type": "string", "description": "Regex or text to search for"},
-                        "paths": {"type": "array", "items": {"type": "string"}, "description": "Directories to search"},
-                        "glob": {"type": "string", "description": "File glob filter (e.g. '*.rs', '*.{ts,tsx}')"},
-                        "file_type": {"type": "string", "description": "rg type filter (e.g. 'rust', 'py', 'ts')"},
-                        "context": {"type": "integer", "description": "Context lines before/after", "default": 3},
-                        "max_results": {"type": "integer", "description": "Max results", "default": 20},
+                        "paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Directories to search",
+                        },
+                        "glob": {
+                            "type": "string",
+                            "description": "File glob filter (e.g. '*.rs', '*.{ts,tsx}')",
+                        },
+                        "file_type": {
+                            "type": "string",
+                            "description": "rg type filter (e.g. 'rust', 'py', 'ts')",
+                        },
+                        "context": {
+                            "type": "integer",
+                            "description": "Context lines before/after",
+                            "default": 3,
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Max results",
+                            "default": 20,
+                        },
                     },
                     "required": ["pattern", "paths"],
                 },
@@ -1070,7 +1774,11 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "type": "object",
                     "properties": {
                         "pattern": {"type": "string", "description": "Regex or text to search for"},
-                        "paths": {"type": "array", "items": {"type": "string"}, "description": "Directories to search"},
+                        "paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Directories to search",
+                        },
                         "glob": {"type": "string", "description": "File glob filter"},
                         "file_type": {"type": "string", "description": "rg type filter"},
                     },
@@ -1109,10 +1817,17 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Representative source file path for the language server"},
+                        "path": {
+                            "type": "string",
+                            "description": "Representative source file path for the language server",
+                        },
                         "query": {"type": "string", "description": "Workspace symbol query"},
                         "root": {"type": "string", "description": "Workspace root (optional)"},
-                        "limit": {"type": "integer", "description": "Max symbols to return", "default": 20},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max symbols to return",
+                            "default": 20,
+                        },
                     },
                     "required": ["path", "query"],
                 },
@@ -1120,7 +1835,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="repo_next_action",
                 description=(
-                    "ROUTER-PREFERRED. Recommend the best next top-level tool from current repo state, active sessions, overlaps, and imported child subtrees."
+                    "Recommend the next top-level action from repository state, active "
+                    "sessions, overlap warnings, and imported child projects."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1132,58 +1848,124 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="repo_lookup",
                 description=(
-                    "ROUTER-PREFERRED. Single read/lookup entry point. Internally dispatches to overview, federated search, symbol knowledge, impact, or edit-time context based on the inputs you provide."
+                    "Look up repository context through one entry point. It selects an "
+                    "overview, search, symbol, impact, or edit-context path from the inputs."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Optional free-form question or lookup query"},
-                        "path": {"type": "string", "description": "Optional file or directory path"},
-                        "line": {"type": "integer", "description": "Optional 1-based line number for exact edit context"},
-                        "column": {"type": "integer", "description": "Optional 1-based column number"},
+                        "query": {
+                            "type": "string",
+                            "description": "Optional free-form question or lookup query",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Optional file or directory path",
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": "Optional 1-based line number for exact edit context",
+                        },
+                        "column": {
+                            "type": "integer",
+                            "description": "Optional 1-based column number",
+                        },
                         "symbol": {"type": "string", "description": "Optional symbol name"},
                         "root": {"type": "string", "description": "Repository root (optional)"},
                         "scope": {"type": "string", "description": "Optional lookup scope"},
                         "source_types": {
                             "type": "array",
-                            "items": {"type": "string", "enum": ["code", "docs", "workboard", "children", "recent"]},
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "code",
+                                    "docs",
+                                    "workboard",
+                                    "children",
+                                    "recent",
+                                    "history",
+                                ],
+                            },
                             "description": "Optional source filters when the lookup dispatches to federated search",
                         },
-                        "limit": {"type": "integer", "description": "Max ranked hits or examples", "default": 10},
+                        "history_all_refs": {
+                            "type": "boolean",
+                            "description": "Search all Git refs for historical queries",
+                            "default": False,
+                        },
+                        "history_since": {
+                            "type": "string",
+                            "description": "Optional Git date lower bound for historical queries",
+                        },
+                        "history_until": {
+                            "type": "string",
+                            "description": "Optional Git date upper bound for historical queries",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max ranked hits or examples",
+                            "default": 10,
+                        },
                     },
                 },
             ),
             Tool(
                 name="scan_context",
                 description=(
-                    "SPECIALIST. Snapshot the available repo context surfaces: code, tests, docs, generated TLDR files, workboard, child subtrees, and recent changes."
+                    "Snapshot available repository context: code, tests, docs, generated "
+                    "summaries, workboard state, child projects, and recent changes."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "root": {"type": "string", "description": "Repository root (optional)"},
-                        "scope": {"type": "string", "description": "Optional file or directory scope"},
-                        "limit": {"type": "integer", "description": "Max examples per surface", "default": 10},
+                        "scope": {
+                            "type": "string",
+                            "description": "Optional file or directory scope",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max examples per surface",
+                            "default": 10,
+                        },
                     },
                 },
             ),
             Tool(
                 name="search_context",
                 description=(
-                    "SPECIALIST. Federated context search across code, docs, workboard, child subtrees, generated TLDR files, and recent changes."
+                    "Search code, docs, workboard state, child projects, generated "
+                    "summaries, and recent changes in one request."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "What context to find"},
                         "root": {"type": "string", "description": "Repository root (optional)"},
-                        "scope": {"type": "string", "description": "Optional file or directory scope"},
+                        "scope": {
+                            "type": "string",
+                            "description": "Optional file or directory scope",
+                        },
                         "source_types": {
                             "type": "array",
-                            "items": {"type": "string", "enum": ["code", "docs", "workboard", "children", "recent"]},
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "code",
+                                    "docs",
+                                    "workboard",
+                                    "children",
+                                    "recent",
+                                    "history",
+                                ],
+                            },
                             "description": "Optional source filters",
                         },
-                        "limit": {"type": "integer", "description": "Max ranked hits", "default": 10},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max ranked hits",
+                            "default": 10,
+                        },
                     },
                     "required": ["query"],
                 },
@@ -1191,8 +1973,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="edit_context",
                 description=(
-                    "SPECIALIST. Code-time context for the exact place you want to edit. "
-                    "Combines snippet, enclosing symbol, semantic info, similar code, tests, and matching workboard tasks."
+                    "Collect context for an exact edit location: source, enclosing symbol, "
+                    "semantic details, related patterns, tests, and matching workboard tasks."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1208,12 +1990,16 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="change_plan",
                 description=(
-                    "ROUTER-PREFERRED. Turn a coding goal into candidate files, risks, steps, acceptance criteria, and verification commands."
+                    "Turn a coding goal into candidate files, risks, ordered steps, "
+                    "acceptance criteria, and verification commands."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "goal": {"type": "string", "description": "What you want to change or achieve"},
+                        "goal": {
+                            "type": "string",
+                            "description": "What you want to change or achieve",
+                        },
                         "path": {"type": "string", "description": "Optional source file path"},
                         "symbol": {"type": "string", "description": "Optional symbol name"},
                         "root": {"type": "string", "description": "Repository root (optional)"},
@@ -1224,7 +2010,7 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="test_map",
                 description=(
-                    "SPECIALIST. Map a source file or symbol to likely tests and exact verification commands."
+                    "Map a source file or symbol to likely tests and verification commands."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1238,29 +2024,42 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="verify_change",
                 description=(
-                    "ROUTER-PREFERRED. Verify a change against tests, workboard evidence, and acceptance criteria."
+                    "Check a change against inferred tests, workboard evidence, and "
+                    "acceptance criteria."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "files": {"type": "array", "items": {"type": "string"}, "description": "Changed file paths"},
+                        "files": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Changed file paths",
+                        },
                         "symbol": {"type": "string", "description": "Optional symbol name"},
                         "task_id": {"type": "string", "description": "Optional workboard task id"},
-                        "plan_id": {"type": "string", "description": "Optional workboard plan id when task ids are ambiguous"},
+                        "plan_id": {
+                            "type": "string",
+                            "description": "Optional workboard plan id when task ids are ambiguous",
+                        },
                         "root": {"type": "string", "description": "Repository root (optional)"},
                         "run_commands": {
                             "type": "boolean",
                             "description": "Whether to execute the inferred verification commands",
                             "default": False,
                         },
-                        "max_commands": {"type": "integer", "description": "Cap executed commands", "default": 3},
+                        "max_commands": {
+                            "type": "integer",
+                            "description": "Cap executed commands",
+                            "default": 3,
+                        },
                     },
                 },
             ),
             Tool(
                 name="pattern_search",
                 description=(
-                    "SPECIALIST. Search for reusable implementation patterns before writing new code."
+                    "Search the repository for reusable implementation patterns relevant "
+                    "to a proposed change."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1269,21 +2068,29 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                         "path": {"type": "string", "description": "Optional source file path"},
                         "symbol": {"type": "string", "description": "Optional symbol name"},
                         "root": {"type": "string", "description": "Repository root (optional)"},
-                        "limit": {"type": "integer", "description": "Max reusable snippets", "default": 5},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max reusable snippets",
+                            "default": 5,
+                        },
                     },
                 },
             ),
             Tool(
                 name="diagnostics_here",
                 description=(
-                    "SPECIALIST. Return LSP diagnostics for a file or exact position, including likely fix area and impacted symbols."
+                    "Return language-server diagnostics for a file or position, including "
+                    "the likely fix area and impacted symbols."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "path": {"type": "string", "description": "Source file path"},
                         "line": {"type": "integer", "description": "Optional 1-based line number"},
-                        "column": {"type": "integer", "description": "Optional 1-based column number"},
+                        "column": {
+                            "type": "integer",
+                            "description": "Optional 1-based column number",
+                        },
                         "root": {"type": "string", "description": "Repository root (optional)"},
                     },
                     "required": ["path"],
@@ -1309,7 +2116,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "session_id": {"type": "string", "description": "Optional explicit session id"},
+                        "session_id": {
+                            "type": "string",
+                            "description": "Optional explicit session id",
+                        },
                         "actor_id": {"type": "string", "description": "Optional actor selector"},
                     },
                 },
@@ -1343,7 +2153,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "properties": {
                         "plan_id": {"type": "string"},
                         "title": {"type": "string"},
-                        "status": {"type": "string", "enum": ["pending", "in_progress", "blocked", "done", "archived"]},
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "blocked", "done", "archived"],
+                        },
                         "owner": {"type": "string"},
                         "goal": {"type": "string"},
                         "add_scope": {"type": "array", "items": {"type": "string"}},
@@ -1375,7 +2188,11 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                         "plan_id": {"type": "string"},
                         "title": {"type": "string"},
                         "phase": {"type": "string", "default": "Backlog"},
-                        "priority": {"type": "string", "enum": ["low", "medium", "high", "critical"], "default": "medium"},
+                        "priority": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "critical"],
+                            "default": "medium",
+                        },
                         "depends_on": {"type": "array", "items": {"type": "string"}},
                         "files": {"type": "array", "items": {"type": "string"}},
                         "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
@@ -1394,8 +2211,14 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "properties": {
                         "plan_id": {"type": "string"},
                         "task_id": {"type": "string"},
-                        "status": {"type": "string", "enum": ["pending", "in_progress", "blocked", "done"]},
-                        "priority": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "blocked", "done"],
+                        },
+                        "priority": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "critical"],
+                        },
                         "next_step": {"type": "string"},
                         "add_blockers": {"type": "array", "items": {"type": "string"}},
                         "add_evidence": {"type": "array", "items": {"type": "string"}},
@@ -1444,7 +2267,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "properties": {
                         "session_id": {"type": "string"},
                         "actor_id": {"type": "string"},
-                        "status": {"type": "string", "enum": ["active", "paused", "blocked", "done", "archived"]},
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "paused", "blocked", "done", "archived"],
+                        },
                         "goal": {"type": "string"},
                         "current_plan_id": {"type": "string"},
                         "current_task_id": {"type": "string"},
@@ -1463,10 +2289,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="know",
                 description=(
-                    "THE 80% TOOL. Instant knowledge about any symbol. "
-                    "Chain: hot_index (cached) → rg (definition + usages) → graph (callers/callees). "
-                    "Stops as soon as it has enough. Returns actual code, all locations, "
-                    "usage count. Start here. Always."
+                    "Find a symbol through the hot index and text search, then add graph "
+                    "and language-server context when available."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1480,10 +2304,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="impact",
                 description=(
-                    "THE 15% TOOL. What breaks if I change this? "
-                    "Chain: rg (all usages) → graph (transitive dependents) → severity assessment. "
-                    "Returns: severity (high/medium/low/orphan), file list, warning. "
-                    "Use BEFORE modifying anything."
+                    "Assess the effect of changing a symbol from direct references and "
+                    "graph dependents. Returns severity, affected files, and a warning."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1497,9 +2319,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="discover",
                 description=(
-                    "THE 5% TOOL. Find relevant code when you don't know the exact name. "
-                    "Chain: rg (literal) → semantic (Qdrant) → merge + deduplicate + rank. "
-                    "Combines exact text matching with semantic similarity."
+                    "Find relevant code when the exact symbol name is unknown by combining "
+                    "text and semantic search results."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1513,11 +2334,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             Tool(
                 name="explain",
                 description=(
-                    "THE EVERYTHING TOOL. Full explanation of a symbol. "
-                    "Chain: know → impact → discover similar → LLM synthesis. "
-                    "Returns a natural language explanation: what it is, how it works, "
-                    "what depends on it, what's similar, what to be careful about. "
-                    "Use when you need to deeply understand something before a major change."
+                    "Explain a symbol from its source, impact, similar implementations, "
+                    "and model synthesis. Use this before a broad or high-risk change."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1529,34 +2347,170 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 },
             ),
         ]
-        return _filter_tools_for_profile(tools, tool_profile, capabilities=capabilities)
+        return _filter_tools_for_profile(
+            _annotate_tools(tools),
+            tool_profile,
+            capabilities=capabilities,
+        )
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict | None) -> list[TextContent]:
+    async def _dispatch_tool(name: str, arguments: dict | None) -> list[TextContent]:
         arguments = arguments or {}
         capabilities = _runtime_capabilities()
 
         if not _tool_is_exposed(name, tool_profile, capabilities=capabilities):
             details = _tooling_payload(tool_profile, capabilities=capabilities)
             missing_backends = _missing_backends_for_tool(name, capabilities)
+            configuration = capabilities.get("configuration", {})
+            setup_required = _configuration_required(capabilities)
             return [
                 TextContent(
                     type="text",
                     text=json.dumps(
                         {
+                            "error_code": "setup_required"
+                            if setup_required
+                            else "tool_unavailable",
                             "error": (
-                                f"Tool `{name}` is not exposed in the `{tool_profile}` profile."
+                                "Must run Configuration - Setup first."
+                                if setup_required
+                                else f"Tool `{name}` is not exposed in the `{tool_profile}` profile."
                                 if not missing_backends
                                 else f"Tool `{name}` is unavailable because these backends are missing: {', '.join(missing_backends)}."
                             ),
                             "active_profile": tool_profile,
+                            "configuration": configuration,
+                            "backend_details": _missing_backend_details(name, capabilities),
                             "exposed_tools": [tool["name"] for tool in details["exposed_tools"]],
-                            "deferred_tools": [tool["name"] for tool in details["deferred_tools"][:10]],
-                            "suppressed_tools": [tool["name"] for tool in details.get("suppressed_tools", [])[:10]],
+                            "deferred_tools": [
+                                tool["name"] for tool in details["deferred_tools"][:10]
+                            ],
+                            "suppressed_tools": [
+                                tool["name"] for tool in details.get("suppressed_tools", [])[:10]
+                            ],
                             "hint": (
-                                "Install or start the missing backend, or restart the server with `--tool-profile full` for the full specialist surface."
+                                "Call `configuration_setup` or run `tldr setup`, then restart this plugin."
+                                if setup_required
+                                else "Install or start the missing backend, or restart the server with `--tool-profile full` for the full specialist surface."
                                 if missing_backends
                                 else "Restart the server with `--tool-profile full` for the full specialist surface."
+                            ),
+                        },
+                        indent=2,
+                    ),
+                )
+            ]
+
+        if name == "configuration_setup":
+            from .config import configuration_status, write_configuration
+
+            if not arguments.get("provider"):
+                status = configuration_status()
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                **status,
+                                "warning": (
+                                    "Cloud subscription inference can send selected context outside "
+                                    "the local machine. Code-level cloud inference defaults to false."
+                                ),
+                                "subscription_note": (
+                                    "Codex, Claude, and Gemini consumer subscriptions are policy "
+                                    "targets, not LiteLLM API credentials."
+                                ),
+                                "configuration_form": {
+                                    "provider": {
+                                        "choices": ["ollama", "litellm"],
+                                        "default": "ollama",
+                                    },
+                                    "tool_profile": {
+                                        "choices": ["router", "full"],
+                                        "default": "router",
+                                    },
+                                    "allow_cloud_non_code": {
+                                        "label": (
+                                            "Allow expanded cloud inference for non-code context"
+                                        ),
+                                        "default": False,
+                                    },
+                                    "cloud_subscriptions": {
+                                        "choices": ["codex", "claude", "gemini"],
+                                        "multiple": True,
+                                        "note": (
+                                            "Routing preferences only; provider access "
+                                            "and credentials are not included."
+                                        ),
+                                    },
+                                    "allow_cloud_code": {
+                                        "label": (
+                                            "Allow expanded cloud inference for code-level context"
+                                        ),
+                                        "default": False,
+                                    },
+                                    "acknowledge_cloud_warning": {
+                                        "label": (
+                                            "I understand selected context may leave this machine"
+                                        ),
+                                        "required_when_cloud_enabled": True,
+                                    },
+                                },
+                                "commands": {
+                                    "interactive": "tldr setup",
+                                    "ollama": "tldr setup --provider ollama",
+                                    "litellm": (
+                                        "tldr setup --provider litellm "
+                                        "--litellm-url http://localhost:4000"
+                                    ),
+                                },
+                            },
+                            indent=2,
+                        ),
+                    )
+                ]
+            try:
+                result = write_configuration(
+                    provider=str(arguments["provider"]),
+                    ollama_url=arguments.get("ollama_url"),
+                    litellm_url=arguments.get("litellm_url"),
+                    embed_model=arguments.get("embed_model"),
+                    chat_model=arguments.get("chat_model"),
+                    qdrant_url=arguments.get("qdrant_url"),
+                    falkordb_url=arguments.get("falkordb_url"),
+                    allow_cloud_non_code=arguments.get("allow_cloud_non_code", False),
+                    cloud_subscriptions=arguments.get("cloud_subscriptions", []),
+                    allow_cloud_code=arguments.get("allow_cloud_code", False),
+                    acknowledge_cloud_warning=arguments.get(
+                        "acknowledge_cloud_warning",
+                        False,
+                    ),
+                    tool_profile=arguments.get("tool_profile", "router"),
+                )
+            except ValueError as exc:
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "error_code": "invalid_configuration",
+                                "error": str(exc),
+                                "configured": False,
+                            },
+                            indent=2,
+                        ),
+                    )
+                ]
+            _invalidate_capability_cache()
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            **result,
+                            "restart_required": True,
+                            "recommended_next_action": (
+                                "Restart Codex or Claude Code so the plugin reloads "
+                                "the saved configuration."
                             ),
                         },
                         indent=2,
@@ -1614,6 +2568,20 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             result = _rag().read_recent(scope=arguments.get("scope"), days=arguments.get("days", 7))
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
+        if name == "history_search":
+            result = _history().search_history(
+                arguments["query"],
+                root=arguments.get("root", "."),
+                scope=arguments.get("scope"),
+                all_refs=arguments.get("all_refs", False),
+                since=arguments.get("since"),
+                until=arguments.get("until"),
+                limit=arguments.get("limit", 10),
+                max_commits=arguments.get("max_commits", 10000),
+                timeout_seconds=arguments.get("timeout_seconds", 5.0),
+            )
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
         if name == "read_grep":
             from .search import format_hits_for_llm, rg_search
 
@@ -1637,7 +2605,9 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 glob=arguments.get("glob"),
                 file_type=arguments.get("file_type"),
             )
-            return [TextContent(type="text", text="\n".join(files) if files else "No matching files.")]
+            return [
+                TextContent(type="text", text="\n".join(files) if files else "No matching files.")
+            ]
 
         if name == "read_semantic":
             result = _lsp().semantic_inspect(
@@ -1680,6 +2650,9 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 root=arguments.get("root", "."),
                 scope=arguments.get("scope"),
                 source_types=arguments.get("source_types"),
+                history_all_refs=arguments.get("history_all_refs", False),
+                history_since=arguments.get("history_since"),
+                history_until=arguments.get("history_until"),
                 limit=arguments.get("limit", 10),
             )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
@@ -1879,7 +2852,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
         if name == "goal_flow":
             goals_result = _rag().suggest_goals(arguments["path"])
             suggested = goals_result["suggested_goals"]
-            top_goal = goals_result.get("top_goal") or f"Based on this analysis, the highest priority: {suggested[:500]}"
+            top_goal = (
+                goals_result.get("top_goal")
+                or f"Based on this analysis, the highest priority: {suggested[:500]}"
+            )
             flow_result = _rag().best_question(
                 goal=top_goal,
                 path=arguments.get("path"),
@@ -1905,7 +2881,9 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "capture_plans":
-            result = _roadmap().capture_plan_input(arguments["text"], root=arguments.get("root", "."))
+            result = _roadmap().capture_plan_input(
+                arguments["text"], root=arguments.get("root", ".")
+            )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "whats_next":
@@ -1933,7 +2911,9 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 prefer_snyk=arguments.get("prefer_snyk", False),
             )
             if arguments.get("save_report", False):
-                result["saved_report"] = audit_module.save_audit_report(result, root=arguments.get("root", "."))
+                result["saved_report"] = audit_module.save_audit_report(
+                    result, root=arguments.get("root", ".")
+                )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "audit_profiles":
@@ -1949,6 +2929,39 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+    @server.call_tool()
+    async def call_tool(name: str, arguments: dict | None) -> list[TextContent]:
+        try:
+            return await _dispatch_tool(name, arguments)
+        except Exception as exc:
+            from .model_client import ModelUnavailableError
+
+            if not isinstance(exc, ModelUnavailableError):
+                raise
+            fallback_tools = list(TOOL_METADATA.get(name, {}).get("fallback_to", [])) or [
+                "repo_lookup"
+            ]
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "error_code": "model_unavailable",
+                            "error": str(exc),
+                            "model_status": exc.status,
+                            "active_profile": tool_profile,
+                            "fallback_tools": fallback_tools,
+                            "recommended_next_action": (
+                                str(exc.status.get("reason", exc))
+                                + " Use a deterministic fallback tool now; run "
+                                "`tldr doctor` for readiness details."
+                            ),
+                        },
+                        indent=2,
+                    ),
+                )
+            ]
 
     return server
 
@@ -2018,13 +3031,25 @@ def start_server(
 ) -> None:
     """Start the MCP server using stdio or SSE."""
 
+    from .config import configuration_status
+
+    setup = configuration_status()
+    if not setup["configured"]:
+        print(
+            "TLDRREADME SETUP REQUIRED: Must run Configuration - Setup first. "
+            "Run `tldr setup`, then restart Codex or Claude Code.",
+            file=sys.stderr,
+            flush=True,
+        )
     server = _build_server(tool_profile=tool_profile)
 
     if transport == "stdio":
         asyncio.run(_run_stdio(server))
         return
     if transport == "sse":
-        asyncio.run(_run_sse(server, host=host, port=port, sse_path=sse_path, message_path=message_path))
+        asyncio.run(
+            _run_sse(server, host=host, port=port, sse_path=sse_path, message_path=message_path)
+        )
         return
 
     raise ValueError(f"Unsupported MCP transport: {transport}")

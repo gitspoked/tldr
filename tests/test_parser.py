@@ -4,13 +4,16 @@ import tempfile
 from pathlib import Path
 
 from tldreadme.parser import (
-    parse_file, parse_directory, detect_language,
-    extract_deps_from_directory, scan_context_docs,
     _parse_markdown_sections,
+    detect_language,
+    extract_deps_from_directory,
+    parse_directory,
+    parse_file,
+    scan_context_docs,
 )
 
-
 # ── Language Detection ────────────────────────────────────────────
+
 
 def test_detect_language_core_four():
     assert detect_language(Path("foo.py")) == "python"
@@ -37,6 +40,7 @@ def test_detect_language_unknown():
 
 
 # ── Python Parsing ────────────────────────────────────────────────
+
 
 def test_parse_python_function():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
@@ -93,11 +97,7 @@ def test_parse_python_class():
 def test_parse_python_imports():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
         f.write(
-            "import os\n"
-            "from pathlib import Path\n"
-            "from typing import Optional\n"
-            "\n"
-            "def foo(): pass\n"
+            "import os\nfrom pathlib import Path\nfrom typing import Optional\n\ndef foo(): pass\n"
         )
         f.flush()
         result = parse_file(Path(f.name))
@@ -108,14 +108,7 @@ def test_parse_python_imports():
 
 def test_parse_python_calls():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write(
-            "def outer():\n"
-            "    inner()\n"
-            "    print('hello')\n"
-            "\n"
-            "def inner():\n"
-            "    pass\n"
-        )
+        f.write("def outer():\n    inner()\n    print('hello')\n\ndef inner():\n    pass\n")
         f.flush()
         result = parse_file(Path(f.name))
 
@@ -126,6 +119,7 @@ def test_parse_python_calls():
 
 
 # ── Rust Parsing ──────────────────────────────────────────────────
+
 
 def test_parse_rust_function():
     with tempfile.NamedTemporaryFile(suffix=".rs", mode="w", delete=False) as f:
@@ -169,6 +163,7 @@ def test_parse_rust_struct_and_impl():
 
 # ── TypeScript Parsing ────────────────────────────────────────────
 
+
 def test_parse_typescript():
     with tempfile.NamedTemporaryFile(suffix=".ts", mode="w", delete=False) as f:
         f.write(
@@ -178,7 +173,7 @@ def test_parse_typescript():
             "}\n"
             "\n"
             "function greet(user: User): string {\n"
-            '  return `Hello ${user.name}`;\n'
+            "  return `Hello ${user.name}`;\n"
             "}\n"
         )
         f.flush()
@@ -191,6 +186,7 @@ def test_parse_typescript():
 
 
 # ── JavaScript Parsing ────────────────────────────────────────────
+
 
 def test_parse_javascript():
     with tempfile.NamedTemporaryFile(suffix=".js", mode="w", delete=False) as f:
@@ -215,6 +211,7 @@ def test_parse_javascript():
 
 
 # ── Directory Parsing ─────────────────────────────────────────────
+
 
 def test_parse_directory():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -247,6 +244,7 @@ def test_parse_directory_skips_symlinks():
 
 
 # ── Dependency Extraction ─────────────────────────────────────────
+
 
 def test_extract_deps_pyproject():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -308,6 +306,7 @@ def test_extract_deps_cargo_toml():
 
 # ── Context Doc Scanner ───────────────────────────────────────────
 
+
 def test_scan_context_docs():
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
@@ -348,6 +347,7 @@ def test_parse_markdown_sections():
 
 
 # ── Edge Cases ────────────────────────────────────────────────────
+
 
 def test_parse_empty_file():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:

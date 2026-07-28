@@ -1,14 +1,14 @@
 """The init pipeline - scan, parse, embed, graph, generate."""
 
 from pathlib import Path
-from rich.console import Console
-from rich.progress import Progress
 
-from .parser import parse_directory
+from rich.console import Console
+
 from .embedder import CodeEmbedder, symbols_to_chunks
+from .generator import generate_claude_md
 from .grapher import CodeGrapher
 from .hot_index import build_hot_index
-from .generator import generate_claude_md
+from .parser import parse_directory
 
 console = Console()
 
@@ -27,7 +27,9 @@ def run_init(directory: Path, output_dir: str = ".claude"):
     total_symbols = sum(len(r.symbols) for r in results)
     total_files = len(results)
     total_lines = sum(r.line_count for r in results)
-    console.print(f"  Found [bold]{total_symbols}[/] symbols in [bold]{total_files}[/] files ({total_lines:,} lines)\n")
+    console.print(
+        f"  Found [bold]{total_symbols}[/] symbols in [bold]{total_files}[/] files ({total_lines:,} lines)\n"
+    )
 
     if not results:
         console.print("[yellow]No parseable code found.[/]")
@@ -46,7 +48,9 @@ def run_init(directory: Path, output_dir: str = ".claude"):
     grapher.index_results(results)
     total_calls = sum(len(r.calls) for r in results)
     total_imports = sum(len(r.imports) for r in results)
-    console.print(f"  Graphed [bold]{total_calls}[/] call edges, [bold]{total_imports}[/] imports\n")
+    console.print(
+        f"  Graphed [bold]{total_calls}[/] call edges, [bold]{total_imports}[/] imports\n"
+    )
 
     # 4. Build hot index (top 100 symbols cached for instant lookup)
     console.print("[dim]Building hot index...[/]")
@@ -58,12 +62,14 @@ def run_init(directory: Path, output_dir: str = ".claude"):
 
     # 5. Generate TLDR.md
     console.print("[dim]Generating context files...[/]")
-    claude_path = generate_claude_md(directory, output_dir=output_dir, parse_results=results, hot_index=hot_idx)
+    claude_path = generate_claude_md(
+        directory, output_dir=output_dir, parse_results=results, hot_index=hot_idx
+    )
     console.print(f"  Written: [bold]{claude_path}[/]\n")
 
     # Summary
     console.print("[bold green]Done.[/] Codebase indexed.\n")
-    console.print(f"  MCP server:  [dim]tldr serve[/]")
+    console.print("  MCP server:  [dim]tldr serve[/]")
     console.print(f"  Watch mode:  [dim]tldr watch {directory}[/]")
-    console.print(f"  Ask:         [dim]tldr ask \"how does X work?\"[/]")
+    console.print('  Ask:         [dim]tldr ask "how does X work?"[/]')
     console.print()

@@ -66,6 +66,7 @@ def _relative(absolute: Path) -> str:
 # ripgrep helpers
 # ---------------------------------------------------------------------------
 
+
 def _find_rg() -> str:
     """Locate the rg binary."""
     for candidate in ["rg", "/usr/local/bin/rg", "/opt/homebrew/bin/rg"]:
@@ -111,8 +112,16 @@ def _rg_search(
         cmd.extend(["--type", file_type])
 
     # Skip noise
-    for skip in ["node_modules", "target", "dist", ".git", "__pycache__",
-                 "*.min.js", "*.min.css", "*.map"]:
+    for skip in [
+        "node_modules",
+        "target",
+        "dist",
+        ".git",
+        "__pycache__",
+        "*.min.js",
+        "*.min.css",
+        "*.map",
+    ]:
         cmd.extend(["--glob", f"!{skip}"])
 
     cmd.extend([pattern, str(path)])
@@ -185,6 +194,7 @@ def _rg_search(
 # glob/find helper
 # ---------------------------------------------------------------------------
 
+
 def _find_files(
     pattern: str,
     path: Path,
@@ -197,7 +207,10 @@ def _find_files(
             continue
         # Skip hidden dirs and common noise
         parts = p.relative_to(path).parts
-        if any(part.startswith(".") or part in ("node_modules", "target", "dist", "__pycache__") for part in parts):
+        if any(
+            part.startswith(".") or part in ("node_modules", "target", "dist", "__pycache__")
+            for part in parts
+        ):
             continue
         if fnmatch.fnmatch(p.name, pattern) or fnmatch.fnmatch(str(p.relative_to(path)), pattern):
             results.append(_relative(p))
@@ -209,6 +222,7 @@ def _find_files(
 # ---------------------------------------------------------------------------
 # MCP server
 # ---------------------------------------------------------------------------
+
 
 def build_server(api_key: Optional[str] = None):
     """Create the MCP server with search/find/read tools."""
@@ -376,7 +390,9 @@ def build_server(api_key: Optional[str] = None):
             elif name == "read_file":
                 file_path = _jail(arguments["path"])
                 if not file_path.is_file():
-                    return [TextContent(type="text", text=f"Error: {arguments['path']} is not a file")]
+                    return [
+                        TextContent(type="text", text=f"Error: {arguments['path']} is not a file")
+                    ]
 
                 offset = max(1, arguments.get("offset", 1))
                 limit = min(5000, max(1, arguments.get("limit", 2000)))
@@ -395,7 +411,12 @@ def build_server(api_key: Optional[str] = None):
             elif name == "list_dir":
                 dir_path = _jail(arguments.get("path", "."))
                 if not dir_path.is_dir():
-                    return [TextContent(type="text", text=f"Error: {arguments.get('path', '.')} is not a directory")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Error: {arguments.get('path', '.')} is not a directory",
+                        )
+                    ]
 
                 entries = []
                 for child in sorted(dir_path.iterdir()):
@@ -423,6 +444,7 @@ def build_server(api_key: Optional[str] = None):
 # SSE transport (Starlette + uvicorn)
 # ---------------------------------------------------------------------------
 
+
 async def run_sse(server, host: str, port: int, api_key: Optional[str] = None):
     """Run the MCP server over SSE/HTTP."""
     import uvicorn
@@ -430,7 +452,7 @@ async def run_sse(server, host: str, port: int, api_key: Optional[str] = None):
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import Response, JSONResponse
+    from starlette.responses import JSONResponse, Response
     from starlette.routing import Mount, Route
 
     transport = SseServerTransport("/messages/")
@@ -450,11 +472,13 @@ async def run_sse(server, host: str, port: int, api_key: Optional[str] = None):
         return Response()
 
     async def handle_health(request):
-        return JSONResponse({
-            "status": "ok",
-            "root": str(_ROOT),
-            "tools": ["search", "find_files", "read_file", "list_dir"],
-        })
+        return JSONResponse(
+            {
+                "status": "ok",
+                "root": str(_ROOT),
+                "tools": ["search", "find_files", "read_file", "list_dir"],
+            }
+        )
 
     app = Starlette(
         routes=[
@@ -466,7 +490,7 @@ async def run_sse(server, host: str, port: int, api_key: Optional[str] = None):
     )
 
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
-    print(f"\n  Search Gateway MCP Server")
+    print("\n  Search Gateway MCP Server")
     print(f"  Root:      {_ROOT}")
     print(f"  Endpoint:  http://{host}:{port}/sse")
     print(f"  Health:    http://{host}:{port}/health")
@@ -478,6 +502,7 @@ async def run_sse(server, host: str, port: int, api_key: Optional[str] = None):
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     global _ROOT
@@ -496,15 +521,19 @@ Connect from sandbox:
         """,
     )
     parser.add_argument(
-        "--root", required=True,
+        "--root",
+        required=True,
         help="Root directory to jail all access to",
     )
     parser.add_argument(
-        "--port", type=int, default=8901,
+        "--port",
+        type=int,
+        default=8901,
         help="Port to listen on (default: 8901)",
     )
     parser.add_argument(
-        "--host", default="127.0.0.1",
+        "--host",
+        default="127.0.0.1",
         help="Host to bind to (default: 127.0.0.1, use 0.0.0.0 for remote access)",
     )
     parser.add_argument(

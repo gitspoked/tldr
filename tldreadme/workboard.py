@@ -1,16 +1,16 @@
 """File-backed plan and task management for repository work."""
 
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Literal
-from uuid import uuid4
 import hashlib
 import os
 import re
 import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal
+from uuid import uuid4
 
-from pydantic import BaseModel, Field
 import yaml
+from pydantic import BaseModel, Field
 
 WORK_ROOT = Path(".tldr/work")
 PLANS_DIR = "plans"
@@ -283,7 +283,9 @@ def _default_actor_id() -> str:
     return os.getenv("TLDREADME_ACTOR_ID", "cli")
 
 
-def _session_identity(root: str | Path | None = None, *, actor_id: str | None = None) -> dict[str, str]:
+def _session_identity(
+    root: str | Path | None = None, *, actor_id: str | None = None
+) -> dict[str, str]:
     """Build workspace, repo, and family identifiers for a session."""
 
     workspace_root = _workspace_root(root)
@@ -366,7 +368,9 @@ def _session_overlap(session: SessionState, other: SessionState) -> dict | None:
     }
 
 
-def _new_session(root: str | Path | None = None, *, session_id: str | None = None, actor_id: str | None = None) -> SessionState:
+def _new_session(
+    root: str | Path | None = None, *, session_id: str | None = None, actor_id: str | None = None
+) -> SessionState:
     """Create an in-memory session state with canonical identity fields."""
 
     identity = _session_identity(root, actor_id=actor_id)
@@ -389,7 +393,9 @@ def _session_paths(root: str | Path | None = None) -> list[Path]:
     return paths
 
 
-def _load_session_path(path: Path, root: str | Path | None = None, *, actor_id: str | None = None) -> SessionState:
+def _load_session_path(
+    path: Path, root: str | Path | None = None, *, actor_id: str | None = None
+) -> SessionState:
     """Load a session file and normalize legacy fields."""
 
     data = _load_yaml(path)
@@ -445,7 +451,9 @@ def _load_session(
         for session in sessions:
             if session.session_id == resolved_id:
                 return session
-        return _new_session(root, session_id=resolved_id, actor_id=resolved_actor) if create else None
+        return (
+            _new_session(root, session_id=resolved_id, actor_id=resolved_actor) if create else None
+        )
 
     workspace_root = str(_workspace_root(root))
     for session in sessions:
@@ -457,7 +465,9 @@ def _load_session(
         if session.session_id == default_session:
             return session
 
-    return _new_session(root, session_id=default_session, actor_id=resolved_actor) if create else None
+    return (
+        _new_session(root, session_id=default_session, actor_id=resolved_actor) if create else None
+    )
 
 
 def _save_session(session: SessionState, root: str | Path | None = None) -> None:
@@ -823,7 +833,14 @@ def add_session_note(
 
     _ensure_dirs(root)
     session = _load_session(root, session_id=session_id, actor_id=actor_id)
-    session.notes.append(SessionNote(timestamp=_now(), note=note, plan_id=plan_id or session.current_plan_id, phase=phase or session.current_phase))
+    session.notes.append(
+        SessionNote(
+            timestamp=_now(),
+            note=note,
+            plan_id=plan_id or session.current_plan_id,
+            phase=phase or session.current_phase,
+        )
+    )
     session.recent_steps = _unique(session.recent_steps, [note])[-5:]
     if plan_id is not None:
         session.current_plan_id = plan_id
@@ -919,7 +936,9 @@ def current_plan(
 
     if plan is None:
         listing = list_plans(root=root)
-        candidate = next((item["id"] for item in listing["plans"] if item["status"] != "archived"), None)
+        candidate = next(
+            (item["id"] for item in listing["plans"] if item["status"] != "archived"), None
+        )
         if candidate:
             plan = _load_plan(candidate, root)
             session.current_plan_id = candidate
@@ -934,7 +953,9 @@ def current_plan(
         relation = _session_relation(session, other)
         if relation == "unrelated":
             continue
-        active_sessions.append(_session_summary(other, current_session_id=session.session_id) | {"relation": relation})
+        active_sessions.append(
+            _session_summary(other, current_session_id=session.session_id) | {"relation": relation}
+        )
         overlap = _session_overlap(session, other)
         if overlap:
             overlaps.append(overlap)

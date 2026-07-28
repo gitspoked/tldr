@@ -1,14 +1,15 @@
 """Runtime dependency checks for Python packages and external tools."""
 
-from importlib.metadata import PackageNotFoundError, version
-from importlib.util import find_spec
-from shutil import which
-from urllib.parse import urlparse
-import os
 import platform
 import socket
 import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError, version
+from importlib.util import find_spec
+from shutil import which
+from urllib.parse import urlparse
+
+from .config import configuration_status, get_setting
 
 TREE_SITTER_VERSION = "0.21.3"
 TREE_SITTER_LANGUAGES_VERSION = "1.10.2"
@@ -23,7 +24,10 @@ OPTIONAL_SERVICE_URLS = (
 )
 
 OPTIONAL_LSPS = (
-    ("Python LSP", ("basedpyright-langserver", "basedpyright", "pyright-langserver", "pyright", "pylsp")),
+    (
+        "Python LSP",
+        ("basedpyright-langserver", "basedpyright", "pyright-langserver", "pyright", "pylsp"),
+    ),
     ("TypeScript/JavaScript LSP", ("typescript-language-server", "tsserver")),
     ("Rust LSP", ("rust-analyzer",)),
     ("Go LSP", ("gopls",)),
@@ -95,7 +99,9 @@ AUDIT_TOOL_SPECS = (
 )
 
 
-def _check(name: str, status: str, details: str, *, category: str, required: bool = False) -> dict[str, object]:
+def _check(
+    name: str, status: str, details: str, *, category: str, required: bool = False
+) -> dict[str, object]:
     """Build a runtime check entry."""
 
     return {
@@ -172,10 +178,19 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
     category = str(check["category"])
     options: list[dict[str, str]] = []
 
+    if name == "Configuration":
+        return [_install_option("Run the configuration wizard", "tldr setup")]
+
     if name == "python":
         if brew and is_macos:
-            options.append(_install_option("Install Python 3.12 with Homebrew", "brew install python@3.12"))
-        options.append(_install_option("Create the project virtualenv with Python 3.12", "python3.12 -m venv .venv"))
+            options.append(
+                _install_option("Install Python 3.12 with Homebrew", "brew install python@3.12")
+            )
+        options.append(
+            _install_option(
+                "Create the project virtualenv with Python 3.12", "python3.12 -m venv .venv"
+            )
+        )
         return _dedupe_options(options)
 
     if name == "tree-sitter":
@@ -195,14 +210,20 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
 
     if name == "Qdrant":
         if docker:
-            options.append(_install_option("Start the bundled Qdrant service", "docker compose up -d qdrant"))
+            options.append(
+                _install_option("Start the bundled Qdrant service", "docker compose up -d qdrant")
+            )
         if brew and is_macos:
             options.append(_install_option("Install Docker Desktop", "brew install --cask docker"))
         return _dedupe_options(options)
 
     if name == "FalkorDB":
         if docker:
-            options.append(_install_option("Start the bundled FalkorDB service", "docker compose up -d falkordb"))
+            options.append(
+                _install_option(
+                    "Start the bundled FalkorDB service", "docker compose up -d falkordb"
+                )
+            )
         if brew and is_macos:
             options.append(_install_option("Install Docker Desktop", "brew install --cask docker"))
         return _dedupe_options(options)
@@ -211,21 +232,50 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
         if brew and is_macos:
             options.append(_install_option("Install Ollama with Homebrew", "brew install ollama"))
         options.append(_install_option("Start the Ollama server", "ollama serve"))
-        options.append(_install_option("Pull the default embed model", "ollama pull nomic-embed-text"))
-        options.append(_install_option("Pull the default chat model", "ollama pull qwen2.5-coder:3b-instruct"))
+        options.append(
+            _install_option("Pull the default embed model", "ollama pull nomic-embed-text")
+        )
+        options.append(
+            _install_option("Pull the default chat model", "ollama pull qwen2.5-coder:3b-instruct")
+        )
         return _dedupe_options(options)
 
     if name == "LiteLLM":
-        options.append(_install_option("Start the bundled LiteLLM stack", "docker compose -f docker-compose.llm.yml up -d"))
-        options.append(_install_option("Configure the LiteLLM proxy URL", "set LITELLM_URL=http://localhost:4000 in .env"))
+        options.append(
+            _install_option(
+                "Start the bundled LiteLLM stack", "docker compose -f docker-compose.llm.yml up -d"
+            )
+        )
+        options.append(
+            _install_option(
+                "Configure the LiteLLM proxy",
+                "tldr setup --provider litellm --litellm-url http://localhost:4000",
+            )
+        )
         return options
+
+    if category == "model" and check.get("provider") == "ollama":
+        model = str(check.get("model", "")).removeprefix("ollama/")
+        if model:
+            return [_install_option(f"Pull {model} explicitly", f"ollama pull {model}")]
 
     if category == "lsp":
         if name == "Python LSP":
             if npm:
-                options.append(_install_option("Install basedpyright via npm", "npm install -g basedpyright"))
-            options.append(_install_option("Install basedpyright via pip", f"{_python_cmd()} -m pip install basedpyright"))
-            options.append(_install_option("Install python-lsp-server via pip", f"{_python_cmd()} -m pip install python-lsp-server"))
+                options.append(
+                    _install_option("Install basedpyright via npm", "npm install -g basedpyright")
+                )
+            options.append(
+                _install_option(
+                    "Install basedpyright via pip", f"{_python_cmd()} -m pip install basedpyright"
+                )
+            )
+            options.append(
+                _install_option(
+                    "Install python-lsp-server via pip",
+                    f"{_python_cmd()} -m pip install python-lsp-server",
+                )
+            )
             return _dedupe_options(options)
 
         if name == "TypeScript/JavaScript LSP":
@@ -240,21 +290,37 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
 
         if name == "Rust LSP":
             if rustup:
-                options.append(_install_option("Install rust-analyzer with rustup", "rustup component add rust-analyzer"))
+                options.append(
+                    _install_option(
+                        "Install rust-analyzer with rustup", "rustup component add rust-analyzer"
+                    )
+                )
             if brew and is_macos:
-                options.append(_install_option("Install rust-analyzer with Homebrew", "brew install rust-analyzer"))
+                options.append(
+                    _install_option(
+                        "Install rust-analyzer with Homebrew", "brew install rust-analyzer"
+                    )
+                )
             return _dedupe_options(options)
 
         if name == "Go LSP":
             if go:
-                options.append(_install_option("Install gopls with Go", "go install golang.org/x/tools/gopls@latest"))
+                options.append(
+                    _install_option(
+                        "Install gopls with Go", "go install golang.org/x/tools/gopls@latest"
+                    )
+                )
             if brew and is_macos:
                 options.append(_install_option("Install gopls with Homebrew", "brew install gopls"))
             return _dedupe_options(options)
 
         if name == "C/C++ LSP":
             if is_macos:
-                options.append(_install_option("Install the Xcode command line tools", "xcode-select --install"))
+                options.append(
+                    _install_option(
+                        "Install the Xcode command line tools", "xcode-select --install"
+                    )
+                )
             if brew and is_macos:
                 options.append(_install_option("Install LLVM with Homebrew", "brew install llvm"))
             return _dedupe_options(options)
@@ -267,37 +333,73 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
     if category == "audit":
         if name == "OSV-Scanner":
             if brew and is_macos:
-                options.append(_install_option("Install OSV-Scanner with Homebrew", "brew install osv-scanner"))
+                options.append(
+                    _install_option("Install OSV-Scanner with Homebrew", "brew install osv-scanner")
+                )
             return _dedupe_options(options)
 
         if name == "pip-audit":
-            options.append(_install_option("Install pip-audit in the active environment", f"{_python_cmd()} -m pip install pip-audit"))
+            options.append(
+                _install_option(
+                    "Install pip-audit in the active environment",
+                    f"{_python_cmd()} -m pip install pip-audit",
+                )
+            )
             return _dedupe_options(options)
 
         if name == "Semgrep":
-            options.append(_install_option("Install Semgrep in the active environment", f"{_python_cmd()} -m pip install semgrep"))
+            options.append(
+                _install_option(
+                    "Install Semgrep in the active environment",
+                    f"{_python_cmd()} -m pip install semgrep",
+                )
+            )
             return _dedupe_options(options)
 
         if name == "Bandit":
-            options.append(_install_option("Install Bandit in the active environment", f"{_python_cmd()} -m pip install bandit"))
+            options.append(
+                _install_option(
+                    "Install Bandit in the active environment",
+                    f"{_python_cmd()} -m pip install bandit",
+                )
+            )
             return _dedupe_options(options)
 
         if name == "Gitleaks":
             if brew and is_macos:
-                options.append(_install_option("Install Gitleaks with Homebrew", "brew install gitleaks"))
+                options.append(
+                    _install_option("Install Gitleaks with Homebrew", "brew install gitleaks")
+                )
             return _dedupe_options(options)
 
         if name in {"Snyk Open Source", "Snyk Code"}:
             if brew and is_macos:
-                options.append(_install_option("Install the Snyk CLI with Homebrew", "brew tap snyk/tap && brew install snyk-cli"))
+                options.append(
+                    _install_option(
+                        "Install the Snyk CLI with Homebrew",
+                        "brew tap snyk/tap && brew install snyk-cli",
+                    )
+                )
             if npm:
-                options.append(_install_option("Install the Snyk CLI with npm", "npm install -g snyk"))
+                options.append(
+                    _install_option("Install the Snyk CLI with npm", "npm install -g snyk")
+                )
             options.append(_install_option("Authenticate the Snyk CLI", "snyk auth"))
             return _dedupe_options(options)
 
         if name == "Garak":
-            options.append(_install_option("Install Garak in the active environment", f"{_python_cmd()} -m pip install garak"))
-            options.append(_install_option("Create a local Garak config stub", "mkdir -p .tldr && printf '# add garak target config here\\n' > .tldr/garak.yml"))
+            options.append(
+                _install_option(
+                    "Install Garak in the active environment",
+                    f"{_python_cmd()} -m pip install garak",
+                )
+            )
+            options.append(
+                _install_option(
+                    "Create a local Garak config stub",
+                    "mkdir -p .tldr && printf '# add garak target config here\\n' > .tldr/garak.yml",
+                )
+            )
             return _dedupe_options(options)
 
     return options
@@ -343,7 +445,10 @@ def ensure_tree_sitter_runtime() -> dict[str, str]:
             "`pip install tree-sitter==0.21.3 tree-sitter-languages==1.10.2`."
         ) from exc
 
-    if tree_sitter_version != TREE_SITTER_VERSION or tree_sitter_languages_version != TREE_SITTER_LANGUAGES_VERSION:
+    if (
+        tree_sitter_version != TREE_SITTER_VERSION
+        or tree_sitter_languages_version != TREE_SITTER_LANGUAGES_VERSION
+    ):
         raise RuntimeError(
             "Unsupported tree-sitter runtime versions. Expected "
             f"`tree-sitter=={TREE_SITTER_VERSION}` and "
@@ -431,11 +536,9 @@ def optional_service_checks() -> list[dict[str, object]]:
     checks: list[dict[str, object]] = []
 
     for name, env_var, default in OPTIONAL_SERVICE_URLS:
-        url = os.getenv(env_var, default).strip()
+        url = get_setting(env_var, default).strip()
         if not url:
-            checks.append(
-                _check(name, "skip", f"{env_var} is not configured.", category="service")
-            )
+            checks.append(_check(name, "skip", f"{env_var} is not configured.", category="service"))
             continue
 
         try:
@@ -463,6 +566,33 @@ def optional_service_checks() -> list[dict[str, object]]:
 
         checks.append(_check(name, "ok", f"{url} is reachable.", category="service"))
 
+    return checks
+
+
+def optional_model_checks() -> list[dict[str, object]]:
+    """Check exact configured model readiness without triggering a pull."""
+
+    from .model_client import ModelClient
+
+    client = ModelClient()
+    checks: list[dict[str, object]] = []
+    for name, model in (
+        ("Embedding model", client.settings.embed_model),
+        ("Chat model", client.settings.chat_model),
+    ):
+        status = client.model_status(model)
+        state = str(status.get("status", "unreachable"))
+        check_status = "ok" if state == "ready" else "skip" if state == "remote" else "warn"
+        check = _check(
+            name,
+            check_status,
+            str(status.get("reason", "Model readiness could not be determined.")),
+            category="model",
+        )
+        check["model"] = status.get("model")
+        check["provider"] = status.get("provider")
+        check["model_status"] = status
+        checks.append(check)
     return checks
 
 
@@ -536,6 +666,15 @@ def runtime_report() -> dict[str, object]:
     """Collect runtime dependency status for CLI diagnostics."""
 
     report: dict[str, object] = {"ok": True, "checks": []}
+    setup = configuration_status()
+    report["checks"].append(
+        _check(
+            "Configuration",
+            "ok" if setup["configured"] else "warn",
+            str(setup["reason"]),
+            category="configuration",
+        )
+    )
 
     report["checks"].append(python_runtime_check())
     if not report["checks"][-1]["ok"]:
@@ -569,6 +708,7 @@ def runtime_report() -> dict[str, object]:
         )
 
     report["checks"].extend(optional_service_checks())
+    report["checks"].extend(optional_model_checks())
     report["checks"].extend(optional_lsp_checks())
     for check in report["checks"]:
         check["install_options"] = install_options_for_check(check)
@@ -576,8 +716,47 @@ def runtime_report() -> dict[str, object]:
     return report
 
 
-def capability_report(report: dict[str, object] | None = None) -> dict[str, object]:
+def capability_report(
+    report: dict[str, object] | None = None,
+    *,
+    configuration: dict[str, object] | None = None,
+) -> dict[str, object]:
     """Summarize tool-relevant backend capabilities from the runtime report."""
+
+    setup = configuration or configuration_status()
+    if report is None and not setup.get("configured", False):
+        return {
+            "report_ok": False,
+            "backends": {
+                "asts": False,
+                "rg": False,
+                "vector": False,
+                "graph": False,
+                "embedding": False,
+                "llm": False,
+                "lsp": False,
+                "git": False,
+                "filesystem": True,
+                "docs": True,
+                "summary": True,
+                "workboard": True,
+                "children": True,
+                "tests": True,
+                "subprocess": True,
+                "hot_index": True,
+            },
+            "backend_details": {
+                "embedding": {
+                    "status": "setup_required",
+                    "reason": str(setup["reason"]),
+                },
+                "llm": {
+                    "status": "setup_required",
+                    "reason": str(setup["reason"]),
+                },
+            },
+            "configuration": setup,
+        }
 
     report = report or runtime_report()
     checks = {
@@ -592,12 +771,24 @@ def capability_report(report: dict[str, object] | None = None) -> dict[str, obje
         if isinstance(check, dict)
     )
 
+    provider_available = bool(
+        checks.get("LiteLLM", {}).get("ok") or checks.get("Ollama", {}).get("ok")
+    )
+    chat_check = checks.get("Chat model")
+    embedding_check = checks.get("Embedding model")
+    chat_available = provider_available and (
+        chat_check is None or chat_check.get("status") in {"ok", "skip"}
+    )
+    embedding_available = provider_available and (
+        embedding_check is None or embedding_check.get("status") in {"ok", "skip"}
+    )
     backends = {
         "asts": bool(checks.get("tree-sitter", {}).get("ok")),
         "rg": bool(checks.get("ripgrep", {}).get("ok")),
         "vector": bool(checks.get("Qdrant", {}).get("ok")),
         "graph": bool(checks.get("FalkorDB", {}).get("ok")),
-        "llm": bool(checks.get("LiteLLM", {}).get("ok") or checks.get("Ollama", {}).get("ok")),
+        "embedding": embedding_available,
+        "llm": chat_available,
         "lsp": lsp_available,
         "git": which("git") is not None,
         "filesystem": True,
@@ -613,4 +804,17 @@ def capability_report(report: dict[str, object] | None = None) -> dict[str, obje
     return {
         "report_ok": bool(report.get("ok")),
         "backends": backends,
+        "backend_details": {
+            "embedding": (
+                embedding_check.get("model_status")
+                if isinstance(embedding_check, dict)
+                else {"status": "unknown", "reason": "No embedding model check was reported."}
+            ),
+            "llm": (
+                chat_check.get("model_status")
+                if isinstance(chat_check, dict)
+                else {"status": "unknown", "reason": "No chat model check was reported."}
+            ),
+        },
+        "configuration": setup,
     }

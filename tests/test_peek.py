@@ -1,9 +1,17 @@
 """Tests for peek module."""
 
 import json
-import json as _json
-from pathlib import Path
-from tldreadme.peek import peek_target
+
+from click.testing import CliRunner
+
+from tldreadme.cli import main as cli_main
+from tldreadme.coding_tools import repo_lookup
+from tldreadme.peek import (
+    peek_target,
+    peek_to_router_result,
+    render_peek,
+    render_peek_markdown,
+)
 
 
 def test_peek_directory_basic(tmp_path):
@@ -158,7 +166,7 @@ def test_peek_directory_with_tldr(tmp_path):
             }
         },
     }
-    (tldr_dir / "hot_index.json").write_text(_json.dumps(hot_data))
+    (tldr_dir / "hot_index.json").write_text(json.dumps(hot_data))
 
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()
@@ -202,16 +210,15 @@ def test_peek_layer3_graceful_when_services_down(tmp_path, monkeypatch):
 
     assert "qdrant" not in result["enrichment_layers"]
     assert "falkordb" not in result["enrichment_layers"]
-    assert any("qdrant" in f for f in result["fallback_used"]) or \
-           result["fallback_used"] == []
+    assert (
+        any("qdrant" in fallback for fallback in result["fallback_used"])
+        or result["fallback_used"] == []
+    )
 
 
 # ---------------------------------------------------------------------------
 # Task 7: Rendering functions
 # ---------------------------------------------------------------------------
-
-
-from tldreadme.peek import render_peek, render_peek_markdown
 
 
 def test_render_peek_directory(tmp_path):
@@ -244,9 +251,6 @@ def test_render_peek_markdown(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-from tldreadme.peek import peek_to_router_result
-
-
 def test_peek_to_router_result(tmp_path):
     (tmp_path / "README.md").write_text("# Demo\n\nA demo tool.\n")
     (tmp_path / "main.py").write_text("def main(): pass\n")
@@ -261,17 +265,19 @@ def test_peek_to_router_result(tmp_path):
     assert "fallback_used" in router_result
     assert isinstance(router_result["confidence"], float)
     assert 0.0 <= router_result["confidence"] <= 1.0
-    assert "init" in router_result["recommended_next_action"].lower() or \
-           "indexed" in router_result["recommended_next_action"].lower()
+    assert (
+        "init" in router_result["recommended_next_action"].lower()
+        or "indexed" in router_result["recommended_next_action"].lower()
+    )
 
 
 def test_peek_to_router_result_indexed(tmp_path):
     (tmp_path / "main.py").write_text("x = 1\n")
     tldr_dir = tmp_path / ".tldr"
     tldr_dir.mkdir()
-    (tldr_dir / "hot_index.json").write_text(_json.dumps({
-        "root": str(tmp_path), "top_files": [], "entries": {}
-    }))
+    (tldr_dir / "hot_index.json").write_text(
+        json.dumps({"root": str(tmp_path), "top_files": [], "entries": {}})
+    )
 
     peek_result = peek_target(tmp_path)
     router_result = peek_to_router_result(peek_result)
@@ -282,11 +288,6 @@ def test_peek_to_router_result_indexed(tmp_path):
 # ---------------------------------------------------------------------------
 # Task 9: CLI wiring
 # ---------------------------------------------------------------------------
-
-import json as _json_cli  # noqa: avoid conflict with earlier import
-
-from click.testing import CliRunner
-from tldreadme.cli import main as cli_main
 
 
 def test_cli_peek_explicit(tmp_path):
@@ -304,7 +305,7 @@ def test_cli_peek_json(tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli_main, ["peek", str(tmp_path), "--json-output"])
     assert result.exit_code == 0, result.output
-    data = _json_cli.loads(result.output)
+    data = json.loads(result.output)
     assert data["type"] == "directory"
 
 
@@ -332,8 +333,6 @@ def test_cli_bare_file_invokes_peek(tmp_path):
 # Task 10: repo_lookup peek fallback
 # ---------------------------------------------------------------------------
 
-from tldreadme.coding_tools import repo_lookup  # noqa: E402
-
 
 def test_repo_lookup_peek_fallback(tmp_path):
     """repo_lookup falls back to peek for unindexed directories (no Qdrant/FalkorDB)."""
@@ -352,14 +351,11 @@ def test_repo_lookup_peek_fallback(tmp_path):
 # Task 12: Full integration test
 # ---------------------------------------------------------------------------
 
-from tldreadme.peek import render_peek, render_peek_markdown, peek_to_router_result  # noqa: E402
-
 
 def test_peek_full_integration(tmp_path):
     """End-to-end: directory with manifest, docs, .tldr/, rendering, and router mapping."""
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "test-project"\nversion = "1.2.3"\n'
-        'dependencies = ["click", "rich"]\n'
+        '[project]\nname = "test-project"\nversion = "1.2.3"\ndependencies = ["click", "rich"]\n'
     )
     (tmp_path / "README.md").write_text("# Test Project\n\nA project for testing peek.\n")
     (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\n## Architecture\n\nSimple design.\n")
@@ -367,28 +363,29 @@ def test_peek_full_integration(tmp_path):
     src = tmp_path / "src"
     src.mkdir()
     (src / "main.py").write_text(
-        "class App:\n"
-        "    def run(self):\n"
-        "        pass\n"
-        "\n"
-        "def create_app():\n"
-        "    return App()\n"
+        "class App:\n    def run(self):\n        pass\n\ndef create_app():\n    return App()\n"
     )
     (src / "utils.py").write_text("def helper():\n    return 42\n")
 
     tldr_dir = tmp_path / ".tldr"
     tldr_dir.mkdir()
-    (tldr_dir / "hot_index.json").write_text(_json.dumps({
-        "root": str(tmp_path),
-        "top_files": ["src/main.py"],
-        "entries": {
-            "App": {
-                "name": "App", "kind": "class", "importance": 0.95,
-                "hit_count": 10,
-                "locations": [{"file": "src/main.py", "line": 1, "context": "class App:"}],
-            },
-        },
-    }))
+    (tldr_dir / "hot_index.json").write_text(
+        json.dumps(
+            {
+                "root": str(tmp_path),
+                "top_files": ["src/main.py"],
+                "entries": {
+                    "App": {
+                        "name": "App",
+                        "kind": "class",
+                        "importance": 0.95,
+                        "hit_count": 10,
+                        "locations": [{"file": "src/main.py", "line": 1, "context": "class App:"}],
+                    },
+                },
+            }
+        )
+    )
 
     result = peek_target(tmp_path)
 

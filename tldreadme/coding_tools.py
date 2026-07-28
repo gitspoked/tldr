@@ -1,13 +1,24 @@
 """Router-friendly coding tools built from existing repo intelligence primitives."""
 
+import subprocess
 from pathlib import Path
 from shlex import quote
-import subprocess
 
 from .parser import LANG_MAP, parse_file, scan_context_docs
 from .search import rg_files, rg_search
 
-IGNORED_SCAN_PARTS = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr", ".claude"}
+IGNORED_SCAN_PARTS = {
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "target",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".tldr",
+    ".claude",
+}
 ROUTER_CONTRACT_VERSION = 1
 PREFERRED_RESULT_KEYS = (
     "tool_contract_version",
@@ -108,7 +119,17 @@ def _router_next_tool(name: str | None) -> str:
 
     if name in ROUTER_TOP_LEVEL_TOOLS:
         return str(name)
-    if name in {"scan_context", "search_context", "edit_context", "know", "impact", "pattern_search", "diagnostics_here", "test_map"}:
+    if name in {
+        "scan_context",
+        "search_context",
+        "edit_context",
+        "know",
+        "impact",
+        "pattern_search",
+        "diagnostics_here",
+        "test_map",
+        "history_search",
+    }:
         return "repo_lookup"
     if name in {"plan_current", "plan_list", "session_update", "session_note"}:
         return "repo_next_action"
@@ -124,16 +145,33 @@ def _query_prefers_impact(query: str | None) -> bool:
     return any(term in lowered for term in LOOKUP_IMPACT_HINTS)
 
 
+def _query_prefers_history(
+    query: str | None,
+    source_types: list[str] | None = None,
+) -> bool:
+    """Return whether the lookup query asks for Git history."""
+
+    from .history import query_requests_history
+
+    return query_requests_history(query, source_types)
+
+
 def _project_type(root: Path, source_files: list[str]) -> str:
     """Infer the dominant project type for verification suggestions."""
 
-    if (root / "pyproject.toml").exists() or (root / "setup.cfg").exists() or any(path.endswith(".py") for path in source_files):
+    if (
+        (root / "pyproject.toml").exists()
+        or (root / "setup.cfg").exists()
+        or any(path.endswith(".py") for path in source_files)
+    ):
         return "python"
     if (root / "Cargo.toml").exists() or any(path.endswith(".rs") for path in source_files):
         return "rust"
     if (root / "go.mod").exists() or any(path.endswith(".go") for path in source_files):
         return "go"
-    if (root / "package.json").exists() or any(path.endswith((".ts", ".tsx", ".js", ".jsx")) for path in source_files):
+    if (root / "package.json").exists() or any(
+        path.endswith((".ts", ".tsx", ".js", ".jsx")) for path in source_files
+    ):
         return "node"
     return "generic"
 
@@ -166,7 +204,12 @@ def _test_files(root: Path) -> list[Path]:
         if "tests" in path.parts or path.parts[-2:-1] == ("test",):
             matches.append(path)
             continue
-        if name.startswith("test_") or "_test." in name or name.endswith(".spec.ts") or name.endswith(".spec.js"):
+        if (
+            name.startswith("test_")
+            or "_test." in name
+            or name.endswith(".spec.ts")
+            or name.endswith(".spec.js")
+        ):
             matches.append(path)
     return matches
 
@@ -325,7 +368,7 @@ def _context_window(path: Path, line: int, radius: int = 3) -> dict:
     return {
         "focus_line": lines[index],
         "before": lines[start:index],
-        "after": lines[index + 1:end],
+        "after": lines[index + 1 : end],
     }
 
 
@@ -352,7 +395,9 @@ def _enclosing_symbol(path: Path, line: int) -> dict | None:
     }
 
 
-def _semantic_context(path: str, line: int, column: int | None, root: str | None = None) -> dict | None:
+def _semantic_context(
+    path: str, line: int, column: int | None, root: str | None = None
+) -> dict | None:
     """Fetch language-server semantic context when available."""
 
     try:
@@ -477,12 +522,16 @@ def _current_work_context(repo_root: Path, path: str | None, symbol: str | None)
     return current
 
 
-def _candidate_test_files_for_source(source_path: Path, repo_root: Path) -> tuple[list[str], list[str]]:
+def _candidate_test_files_for_source(
+    source_path: Path, repo_root: Path
+) -> tuple[list[str], list[str]]:
     """Infer likely test files from a source file path."""
 
     matches: list[str] = []
     heuristics: list[str] = []
-    test_dirs = [directory for directory in (repo_root / "tests", repo_root / "test") if directory.exists()]
+    test_dirs = [
+        directory for directory in (repo_root / "tests", repo_root / "test") if directory.exists()
+    ]
     if not test_dirs:
         return matches, heuristics
 
@@ -531,7 +580,9 @@ def _content_test_hits(symbol: str | None, repo_root: Path) -> tuple[list[str], 
 
     hits: list[str] = []
     heuristics: list[str] = []
-    test_dirs = [directory for directory in (repo_root / "tests", repo_root / "test") if directory.exists()]
+    test_dirs = [
+        directory for directory in (repo_root / "tests", repo_root / "test") if directory.exists()
+    ]
     if not test_dirs:
         return [], []
 
@@ -547,7 +598,9 @@ def _content_test_hits(symbol: str | None, repo_root: Path) -> tuple[list[str], 
     return _dedupe(hits), _dedupe(heuristics)
 
 
-def _verification_commands(repo_root: Path, source_files: list[str], test_files: list[str]) -> list[str]:
+def _verification_commands(
+    repo_root: Path, source_files: list[str], test_files: list[str]
+) -> list[str]:
     """Suggest verification commands based on project type and discovered tests."""
 
     project_type = _project_type(repo_root, source_files)
@@ -559,7 +612,10 @@ def _verification_commands(repo_root: Path, source_files: list[str], test_files:
         else:
             commands.append("python -m pytest -q")
         if source_files:
-            commands.append("PYTHONPYCACHEPREFIX=/tmp/tldr-pyc python -m compileall " + " ".join(quote(path) for path in source_files))
+            commands.append(
+                "PYTHONPYCACHEPREFIX=/tmp/tldr-pyc python -m compileall "
+                + " ".join(quote(path) for path in source_files)
+            )
         return _dedupe(commands)
 
     if project_type == "rust":
@@ -574,7 +630,7 @@ def _verification_commands(repo_root: Path, source_files: list[str], test_files:
         commands.append("npm test -- --runInBand")
         return commands
 
-    return ["rg -n \"TODO|FIXME\" ."]
+    return ['rg -n "TODO|FIXME" .']
 
 
 def _clip_text(text: str, max_lines: int = 10, max_chars: int = 500) -> str:
@@ -598,7 +654,11 @@ def _find_task_context(task_id: str, repo_root: Path, plan_id: str | None = None
     except Exception:
         return None
 
-    candidate_plan_ids = [plan_id] if plan_id else [item["id"] for item in list_plans(root=work_root).get("plans", [])]
+    candidate_plan_ids = (
+        [plan_id]
+        if plan_id
+        else [item["id"] for item in list_plans(root=work_root).get("plans", [])]
+    )
     for candidate in candidate_plan_ids:
         try:
             return get_task(candidate, task_id, root=work_root)
@@ -667,14 +727,18 @@ def _evidence_status_counts(entries: list[str]) -> dict[str, int]:
     failed = 0
     for entry in entries:
         lower = entry.lower()
-        if any(token in lower for token in ("failed", "error", "traceback", "exception", "timed out")):
+        if any(
+            token in lower for token in ("failed", "error", "traceback", "exception", "timed out")
+        ):
             failed += 1
         elif any(token in lower for token in ("passed", "ok", "success")):
             passed += 1
     return {"passed": passed, "failed": failed}
 
 
-def _diagnostics_near_position(diagnostics: list[dict], line: int | None, column: int | None) -> tuple[list[dict], bool]:
+def _diagnostics_near_position(
+    diagnostics: list[dict], line: int | None, column: int | None
+) -> tuple[list[dict], bool]:
     """Return diagnostics at or near a position."""
 
     if line is None:
@@ -724,7 +788,9 @@ def test_map(path: str | None = None, symbol: str | None = None, root: str = "."
     if path:
         resolved = _resolve_path(path, repo_root)
         source_files.append(str(resolved))
-        heuristics.append(f"source path: {resolved.relative_to(repo_root) if resolved.is_relative_to(repo_root) else resolved}")
+        heuristics.append(
+            f"source path: {resolved.relative_to(repo_root) if resolved.is_relative_to(repo_root) else resolved}"
+        )
 
     knowledge = None
     if symbol and not source_files:
@@ -738,7 +804,9 @@ def test_map(path: str | None = None, symbol: str | None = None, root: str = "."
     test_files: list[str] = []
 
     for source_file in source_files:
-        file_matches, file_heuristics = _candidate_test_files_for_source(Path(source_file), repo_root)
+        file_matches, file_heuristics = _candidate_test_files_for_source(
+            Path(source_file), repo_root
+        )
         test_files.extend(file_matches)
         heuristics.extend(file_heuristics)
 
@@ -778,7 +846,9 @@ def test_map(path: str | None = None, symbol: str | None = None, root: str = "."
         evidence=evidence,
         verification_commands=verification_commands,
         recommended_next_action=(
-            f"Run {verification_commands[0]}" if verification_commands else "Inspect the nearest existing tests before editing."
+            f"Run {verification_commands[0]}"
+            if verification_commands
+            else "Inspect the nearest existing tests before editing."
         ),
         fallback_used=fallback_used,
         next_best_tool="edit_context" if source_files else "change_plan",
@@ -840,7 +910,9 @@ def edit_context(path: str, line: int, column: int | None = None, root: str = ".
     if semantic and semantic.get("hover"):
         evidence.append(f"semantic hover: {semantic['hover']}")
     if similar:
-        evidence.append(f"similar implementation: {similar[0].get('symbol', similar[0].get('file', ''))}")
+        evidence.append(
+            f"similar implementation: {similar[0].get('symbol', similar[0].get('file', ''))}"
+        )
     if matching_tasks:
         evidence.append(f"matching task: {matching_tasks[0]['title']}")
 
@@ -865,7 +937,9 @@ def edit_context(path: str, line: int, column: int | None = None, root: str = ".
     )
 
 
-def change_plan(goal: str, path: str | None = None, symbol: str | None = None, root: str = ".") -> dict:
+def change_plan(
+    goal: str, path: str | None = None, symbol: str | None = None, root: str = "."
+) -> dict:
     """Turn a coding goal into candidate files, steps, risks, and verification commands."""
 
     repo_root = _repo_root(root)
@@ -876,7 +950,9 @@ def change_plan(goal: str, path: str | None = None, symbol: str | None = None, r
         primary_path = str(_resolve_path(knowledge["definition"]["file"], repo_root))
 
     impact = _impact_for_symbol(symbol, str(repo_root)) if symbol else None
-    discovery_query = " ".join(part for part in [goal, symbol, Path(primary_path).stem if primary_path else ""] if part).strip()
+    discovery_query = " ".join(
+        part for part in [goal, symbol, Path(primary_path).stem if primary_path else ""] if part
+    ).strip()
     discovery = _discover_for_goal(discovery_query or goal, str(repo_root))
 
     candidate_files: list[str] = []
@@ -892,7 +968,11 @@ def change_plan(goal: str, path: str | None = None, symbol: str | None = None, r
     likely_symbols = _dedupe(
         [symbol or ""]
         + [item.get("symbol", "") for item in (discovery or {}).get("merged", [])]
-        + ([entry.get("name", "") for entry in (knowledge or {}).get("callers", [])[:2]] if knowledge else [])
+        + (
+            [entry.get("name", "") for entry in (knowledge or {}).get("callers", [])[:2]]
+            if knowledge
+            else []
+        )
     )[:8]
 
     tests = test_map(path=primary_path, symbol=symbol, root=str(repo_root))
@@ -914,16 +994,22 @@ def change_plan(goal: str, path: str | None = None, symbol: str | None = None, r
     if tests.get("test_files"):
         acceptance_criteria.append("Related tests pass with the updated behavior.")
     else:
-        acceptance_criteria.append("Add or confirm at least one meaningful verification path for the changed area.")
+        acceptance_criteria.append(
+            "Add or confirm at least one meaningful verification path for the changed area."
+        )
     acceptance_criteria = _dedupe(acceptance_criteria)
 
     risks: list[str] = []
     if impact:
         risks.append(impact.get("warning", ""))
         if impact.get("severity") in {"high", "medium"}:
-            risks.append(f"Impact severity is {impact['severity']}; review dependent files before editing.")
+            risks.append(
+                f"Impact severity is {impact['severity']}; review dependent files before editing."
+            )
     if not tests.get("test_files"):
-        risks.append("No targeted tests were found automatically; regressions may only show up in broader validation.")
+        risks.append(
+            "No targeted tests were found automatically; regressions may only show up in broader validation."
+        )
     risks = _dedupe([risk for risk in risks if risk])
 
     verification_commands = list(tests.get("verification_commands", []))
@@ -933,10 +1019,14 @@ def change_plan(goal: str, path: str | None = None, symbol: str | None = None, r
     verification_commands = _dedupe(verification_commands)
 
     ordered_steps = [
-        f"Inspect the primary edit target: {candidate_files[0]}" if candidate_files else "Inspect the most relevant implementation before editing.",
+        f"Inspect the primary edit target: {candidate_files[0]}"
+        if candidate_files
+        else "Inspect the most relevant implementation before editing.",
         "Update the implementation in the smallest set of candidate files first.",
         "Update or add focused tests covering the requested behavior.",
-        f"Run verification: {verification_commands[0]}" if verification_commands else "Run the strongest available verification command.",
+        f"Run verification: {verification_commands[0]}"
+        if verification_commands
+        else "Run the strongest available verification command.",
     ]
 
     if work_context and work_context.get("matching_tasks"):
@@ -989,7 +1079,9 @@ def change_plan(goal: str, path: str | None = None, symbol: str | None = None, r
     )
 
 
-def diagnostics_here(path: str, line: int | None = None, column: int | None = None, root: str = ".") -> dict:
+def diagnostics_here(
+    path: str, line: int | None = None, column: int | None = None, root: str = "."
+) -> dict:
     """Return LSP diagnostics for a file or exact position."""
 
     repo_root = _repo_root(root)
@@ -1039,9 +1131,17 @@ def diagnostics_here(path: str, line: int | None = None, column: int | None = No
     elif verification_commands:
         recommended_next_action = f"Run {verification_commands[0]} to confirm the file is clean."
     else:
-        recommended_next_action = "Inspect the file manually; no diagnostics or verification commands were available."
+        recommended_next_action = (
+            "Inspect the file manually; no diagnostics or verification commands were available."
+        )
 
-    confidence = 0.85 if relevant_diagnostics and not used_nearest else 0.65 if relevant_diagnostics else 0.25
+    confidence = (
+        0.85
+        if relevant_diagnostics and not used_nearest
+        else 0.65
+        if relevant_diagnostics
+        else 0.25
+    )
 
     return _preferred_result(
         path=str(source_path),
@@ -1089,7 +1189,11 @@ def pattern_search(
         fallback_used.append("discovery_candidates_unavailable")
 
     try:
-        rg_hits = rg_search(search_query, [str(repo_root)], context=2, max_results=limit) if search_query else []
+        rg_hits = (
+            rg_search(search_query, [str(repo_root)], context=2, max_results=limit)
+            if search_query
+            else []
+        )
     except Exception:
         rg_hits = []
     if not rg_hits:
@@ -1117,7 +1221,9 @@ def pattern_search(
         )
 
     for item in (discovery or {}).get("merged", [])[: limit * 2]:
-        key = f"discover:{item.get('file')}:{item.get('line')}:{item.get('symbol', item.get('text'))}"
+        key = (
+            f"discover:{item.get('file')}:{item.get('line')}:{item.get('symbol', item.get('text'))}"
+        )
         if key in seen:
             continue
         seen.add(key)
@@ -1160,7 +1266,9 @@ def pattern_search(
         for item in patterns[:5]
     ]
     if not evidence:
-        evidence.append("No reusable patterns were found from semantic, discovery, or ripgrep search.")
+        evidence.append(
+            "No reusable patterns were found from semantic, discovery, or ripgrep search."
+        )
 
     if top:
         recommended_next_action = (
@@ -1226,7 +1334,9 @@ def verify_change(
     related_tests: list[str] = []
     evidence: list[str] = []
     for index, file_path in enumerate(target_files[:3]):
-        mapped = test_map(path=file_path, symbol=symbol if index == 0 else None, root=str(repo_root))
+        mapped = test_map(
+            path=file_path, symbol=symbol if index == 0 else None, root=str(repo_root)
+        )
         verification_commands.extend(mapped.get("verification_commands", []))
         related_tests.extend(mapped.get("test_files", []))
         evidence.extend(f"test map: {item}" for item in mapped.get("heuristics", [])[:2])
@@ -1238,17 +1348,23 @@ def verify_change(
         evidence.extend(f"test map: {item}" for item in mapped.get("heuristics", [])[:2])
 
     if task:
-        verification_commands = _dedupe(task.get("verification_commands", []) + verification_commands)
+        verification_commands = _dedupe(
+            task.get("verification_commands", []) + verification_commands
+        )
         evidence.extend(f"task evidence: {item}" for item in task.get("evidence", [])[:5])
         evidence.append(f"task status: {task.get('status')}")
     else:
         verification_commands = _dedupe(verification_commands)
 
-    command_results = _run_verification_commands(
-        verification_commands,
-        repo_root,
-        max_commands=max_commands,
-    ) if run_commands and verification_commands else []
+    command_results = (
+        _run_verification_commands(
+            verification_commands,
+            repo_root,
+            max_commands=max_commands,
+        )
+        if run_commands and verification_commands
+        else []
+    )
 
     if verification_commands and not run_commands:
         fallback_used.append("verification_commands_not_executed")
@@ -1295,9 +1411,13 @@ def verify_change(
     if acceptance_criteria and not task.get("evidence") and not command_results:
         missing_evidence.append("No recorded evidence is attached to the task acceptance criteria.")
     if verification_commands and not command_results and run_commands:
-        missing_evidence.append("Verification commands were requested but no command results were captured.")
+        missing_evidence.append(
+            "Verification commands were requested but no command results were captured."
+        )
     if verification_commands and not run_commands:
-        missing_evidence.append("Verification commands are available but were not executed in this verification run.")
+        missing_evidence.append(
+            "Verification commands are available but were not executed in this verification run."
+        )
     if command_failed:
         missing_evidence.append("One or more verification commands failed.")
     if not related_tests:
@@ -1314,17 +1434,25 @@ def verify_change(
 
     if command_failed:
         first_failed = next(result for result in command_results if not result.get("passed"))
-        recommended_next_action = f"Fix the failing verification command first: {first_failed['command']}."
+        recommended_next_action = (
+            f"Fix the failing verification command first: {first_failed['command']}."
+        )
     elif missing_evidence:
         recommended_next_action = missing_evidence[0]
     elif acceptance_criteria_satisfied:
-        recommended_next_action = "Record the passing evidence on the workboard task and move to the next item."
+        recommended_next_action = (
+            "Record the passing evidence on the workboard task and move to the next item."
+        )
     elif verification_commands:
         recommended_next_action = f"Run {verification_commands[0]} to collect concrete evidence."
     else:
-        recommended_next_action = "Add a focused verification command or test before treating the change as complete."
+        recommended_next_action = (
+            "Add a focused verification command or test before treating the change as complete."
+        )
 
-    confidence = 0.85 if command_results else 0.7 if task else 0.55 if verification_commands else 0.3
+    confidence = (
+        0.85 if command_results else 0.7 if task else 0.55 if verification_commands else 0.3
+    )
 
     return _preferred_result(
         files=target_files,
@@ -1345,7 +1473,11 @@ def verify_change(
         verification_commands=verification_commands,
         recommended_next_action=recommended_next_action,
         fallback_used=fallback_used,
-        next_best_tool="diagnostics_here" if command_failed else "task_update" if task else "edit_context",
+        next_best_tool="diagnostics_here"
+        if command_failed
+        else "task_update"
+        if task
+        else "edit_context",
     )
 
 
@@ -1361,7 +1493,9 @@ def repo_next_action(root: str = ".") -> dict:
     session = current.get("session") or {}
     plan = current.get("plan") or {}
     overlaps = current.get("overlaps") or []
-    unknown_children = [child for child in (children or {}).get("children", []) if child.get("status") == "unknown"]
+    unknown_children = [
+        child for child in (children or {}).get("children", []) if child.get("status") == "unknown"
+    ]
     current_task = _repo_task_by_id(current, session.get("current_task_id"))
 
     verification_commands: list[str] = []
@@ -1397,7 +1531,11 @@ def repo_next_action(root: str = ".") -> dict:
         reason = f"Unknown child subtree detected at {top.get('path')}; orient to the imported surface before deeper analysis."
         confidence = 0.88
     elif session.get("current_task_id") and current_task:
-        if verification_commands and current_task.get("status") in {"in_progress", "done", "blocked"}:
+        if verification_commands and current_task.get("status") in {
+            "in_progress",
+            "done",
+            "blocked",
+        }:
             suggested_tool = "verify_change"
             suggested_arguments = {
                 "task_id": current_task.get("id"),
@@ -1409,7 +1547,10 @@ def repo_next_action(root: str = ".") -> dict:
         else:
             suggested_tool = "change_plan"
             suggested_arguments = {
-                "goal": current_task.get("title") or plan.get("goal") or session.get("goal") or "Continue the current task",
+                "goal": current_task.get("title")
+                or plan.get("goal")
+                or session.get("goal")
+                or "Continue the current task",
                 "path": current_task.get("files", [None])[0],
                 "root": str(repo_root),
             }
@@ -1418,10 +1559,17 @@ def repo_next_action(root: str = ".") -> dict:
     elif session.get("next_action") or session.get("current_focus"):
         suggested_tool = "change_plan"
         suggested_arguments = {
-            "goal": session.get("next_action") or session.get("current_focus") or plan.get("goal") or "Resume the current task",
+            "goal": session.get("next_action")
+            or session.get("current_focus")
+            or plan.get("goal")
+            or "Resume the current task",
             "root": str(repo_root),
         }
-        reason = session.get("next_action") or session.get("current_focus") or "Resume the active work context."
+        reason = (
+            session.get("next_action")
+            or session.get("current_focus")
+            or "Resume the active work context."
+        )
         confidence = 0.78
     elif plan:
         suggested_tool = "change_plan"
@@ -1431,10 +1579,15 @@ def repo_next_action(root: str = ".") -> dict:
         }
         reason = f"Active plan `{plan.get('title')}` has no explicit next action; derive one from the plan goal."
         confidence = 0.72
-    elif recent and ((recent.get("counts") or {}).get("working_tree_changes") or (recent.get("counts") or {}).get("commits")):
+    elif recent and (
+        (recent.get("counts") or {}).get("working_tree_changes")
+        or (recent.get("counts") or {}).get("commits")
+    ):
         suggested_tool = "repo_lookup"
         suggested_arguments = {"root": str(repo_root)}
-        reason = "Recent changes exist without active workboard context; re-orient before continuing."
+        reason = (
+            "Recent changes exist without active workboard context; re-orient before continuing."
+        )
         confidence = 0.6
     else:
         fallback_used.append("no_active_work_context")
@@ -1460,7 +1613,9 @@ def repo_next_action(root: str = ".") -> dict:
     return _preferred_result(
         root=str(repo_root),
         current_session=session,
-        current_plan={"id": plan.get("id"), "title": plan.get("title"), "goal": plan.get("goal")} if plan else None,
+        current_plan={"id": plan.get("id"), "title": plan.get("title"), "goal": plan.get("goal")}
+        if plan
+        else None,
         current_task=current_task,
         overlaps=overlaps,
         unknown_children=unknown_children,
@@ -1487,16 +1642,23 @@ def repo_lookup(
     root: str = ".",
     scope: str | None = None,
     source_types: list[str] | None = None,
+    history_all_refs: bool = False,
+    history_since: str | None = None,
+    history_until: str | None = None,
     limit: int = 10,
 ) -> dict:
-    """Single router-first lookup entry point for repo overview, search, symbol, impact, and edit context."""
+    """Route repository overview, search, history, symbol, impact, and edit lookups."""
 
     repo_root = _repo_root(root)
     lookup_scope = scope or path
     fallback_used: list[str] = []
 
     dispatched_tool = "scan_context"
-    dispatched_arguments: dict[str, object] = {"root": str(repo_root), "scope": lookup_scope, "limit": limit}
+    dispatched_arguments: dict[str, object] = {
+        "root": str(repo_root),
+        "scope": lookup_scope,
+        "limit": limit,
+    }
     lookup_mode = "overview"
     result: dict | None = None
 
@@ -1511,13 +1673,73 @@ def repo_lookup(
         }
         lookup_mode = "edit"
         result = edit_context(resolved_path, line, column=column, root=str(repo_root))
+    elif query and _query_prefers_history(query, source_types):
+        from .history import search_history
+
+        history_scope = None
+        if lookup_scope:
+            resolved_scope = _resolve_path(lookup_scope, repo_root)
+            try:
+                history_scope = str(resolved_scope.relative_to(repo_root))
+            except ValueError:
+                history_scope = str(resolved_scope)
+        all_refs = history_all_refs or "all refs" in query.lower()
+        dispatched_tool = "history_search"
+        dispatched_arguments = {
+            "query": query,
+            "root": str(repo_root),
+            "scope": history_scope,
+            "all_refs": all_refs,
+            "since": history_since,
+            "until": history_until,
+            "limit": limit,
+        }
+        lookup_mode = "history"
+        history_result = search_history(
+            query,
+            root=str(repo_root),
+            scope=history_scope,
+            all_refs=all_refs,
+            since=history_since,
+            until=history_until,
+            limit=limit,
+        )
+        history_hits = history_result.get("results", [])
+        evidence = [
+            f"{item.get('short_commit')} {item.get('subject')} [{item.get('matched_field')}]"
+            for item in history_hits[:5]
+        ]
+        exact_match = any(
+            item.get("match_kind") in {"exact_phrase", "exact_unicode"} for item in history_hits
+        )
+        result = _preferred_result(
+            history=history_result,
+            summary=(
+                f"Found {len(history_hits)} Git history match(es) for `{query}`."
+                if history_hits
+                else f"No Git history matches were found for `{query}`."
+            ),
+            confidence=0.95 if exact_match else (0.82 if history_hits else 0.3),
+            evidence=evidence,
+            verification_commands=[],
+            recommended_next_action=(
+                f"Inspect commit {history_hits[0].get('short_commit')} with `git show`."
+                if history_hits
+                else "Broaden the history query or include all refs."
+            ),
+            fallback_used=list(history_result.get("fallback_used", []))
+            + ([] if history_hits else ["history_no_matches"]),
+            next_best_tool="repo_lookup",
+        )
     elif symbol and _query_prefers_impact(query):
         dispatched_tool = "impact"
         dispatched_arguments = {"name": symbol, "root": str(repo_root)}
         lookup_mode = "impact"
         impact_result = _impact_for_symbol(symbol, str(repo_root))
         if impact_result:
-            verification_commands = test_map(symbol=symbol, root=str(repo_root)).get("verification_commands", [])
+            verification_commands = test_map(symbol=symbol, root=str(repo_root)).get(
+                "verification_commands", []
+            )
             evidence = [
                 f"severity: {impact_result.get('severity', 'unknown')}",
                 impact_result.get("warning", ""),
@@ -1537,7 +1759,9 @@ def repo_lookup(
                     else "Use repo_lookup with a concrete path or line before changing code."
                 ),
                 fallback_used=[],
-                next_best_tool="change_plan" if impact_result.get("severity") in {"high", "medium", "low"} else "repo_lookup",
+                next_best_tool="change_plan"
+                if impact_result.get("severity") in {"high", "medium", "low"}
+                else "repo_lookup",
             )
         else:
             fallback_used.append("impact_lookup_unavailable")
@@ -1547,7 +1771,12 @@ def repo_lookup(
         dispatched_arguments = {"name": symbol, "root": str(repo_root)}
         lookup_mode = "symbol"
         knowledge = _knowledge_for_symbol(symbol, str(repo_root))
-        if knowledge and (knowledge.get("found") or knowledge.get("definition") or knowledge.get("callers") or knowledge.get("usage_count") is not None):
+        if knowledge and (
+            knowledge.get("found")
+            or knowledge.get("definition")
+            or knowledge.get("callers")
+            or knowledge.get("usage_count") is not None
+        ):
             definition = knowledge.get("definition") or {}
             verification_commands = test_map(
                 path=definition.get("file"),
@@ -1563,7 +1792,7 @@ def repo_lookup(
                 evidence.append(f"callers: {len(knowledge['callers'])}")
             if knowledge.get("callees"):
                 evidence.append(f"callees: {len(knowledge['callees'])}")
-            if ((knowledge.get("semantic") or {}).get("hover")):
+            if (knowledge.get("semantic") or {}).get("hover"):
                 evidence.append(f"semantic hover: {knowledge['semantic']['hover']}")
 
             if definition.get("file") and definition.get("line"):
@@ -1609,6 +1838,7 @@ def repo_lookup(
     if result is None:
         try:
             from .peek import peek_target, peek_to_router_result
+
             peek_result = peek_target(repo_root)
             router = peek_to_router_result(peek_result)
             result = _preferred_result(
@@ -1627,7 +1857,9 @@ def repo_lookup(
 
     payload = dict(result)
     specialist_next_tool = payload.get("next_best_tool")
-    payload["summary"] = f"Repo lookup used `{dispatched_tool}`. {payload.get('summary', '')}".strip()
+    payload["summary"] = (
+        f"Repo lookup used `{dispatched_tool}`. {payload.get('summary', '')}".strip()
+    )
     payload["lookup_mode"] = lookup_mode
     payload["lookup_inputs"] = {
         "query": query,
@@ -1636,6 +1868,10 @@ def repo_lookup(
         "column": column,
         "symbol": symbol,
         "scope": lookup_scope,
+        "source_types": source_types,
+        "history_all_refs": history_all_refs,
+        "history_since": history_since,
+        "history_until": history_until,
     }
     payload["dispatched_tool"] = dispatched_tool
     payload["dispatched_arguments"] = dispatched_arguments
@@ -1647,13 +1883,16 @@ def repo_lookup(
         "symbol": "A symbol name was provided, so direct symbol knowledge is more precise than broad search.",
         "impact": "The query reads like change-risk analysis, so impact lookup is the right specialist path.",
         "edit": "A file position was provided, so edit-time context is the most precise lookup surface.",
+        "history": "The query asks about Git history, so commit subjects and bodies are the most precise source.",
     }[lookup_mode]
     payload["fallback_used"] = _dedupe(list(payload.get("fallback_used", [])) + fallback_used)
     payload["next_best_tool"] = _router_next_tool(specialist_next_tool)
     return payload
 
 
-def _code_context_hits(query: str, repo_root: Path, *, scope: str | None = None, limit: int = 10) -> list[dict]:
+def _code_context_hits(
+    query: str, repo_root: Path, *, scope: str | None = None, limit: int = 10
+) -> list[dict]:
     """Search source code for relevant query matches."""
 
     scope_path = _scope_path(scope, repo_root)
@@ -1673,7 +1912,9 @@ def _code_context_hits(query: str, repo_root: Path, *, scope: str | None = None,
                 "path": str(file_path.resolve()),
                 "line": hit.line,
                 "score": 1.0,
-                "snippet": _clip_text("\n".join([*hit.before, hit.text, *hit.after]), max_lines=5, max_chars=280),
+                "snippet": _clip_text(
+                    "\n".join([*hit.before, hit.text, *hit.after]), max_lines=5, max_chars=280
+                ),
                 "why_matched": "Exact text search hit in source code.",
                 "symbol": None,
             }
@@ -1683,7 +1924,9 @@ def _code_context_hits(query: str, repo_root: Path, *, scope: str | None = None,
     return results
 
 
-def _doc_context_hits(query: str, repo_root: Path, *, scope: str | None = None, limit: int = 10) -> list[dict]:
+def _doc_context_hits(
+    query: str, repo_root: Path, *, scope: str | None = None, limit: int = 10
+) -> list[dict]:
     """Search docs, generated TLDR files, and markdown context."""
 
     scope_path = _scope_path(scope, repo_root)
@@ -1835,6 +2078,30 @@ def _recent_context_hits(query: str, repo_root: Path, *, limit: int = 10) -> lis
     return results[:limit]
 
 
+def _history_context_hits(query: str, repo_root: Path, *, limit: int = 10) -> list[dict]:
+    """Search reachable commit subjects and bodies."""
+
+    from .history import search_history
+
+    history_result = search_history(query, root=str(repo_root), limit=limit)
+    return [
+        {
+            "source_type": "history",
+            "path": item.get("commit"),
+            "line": None,
+            "score": item.get("score", 0.0),
+            "snippet": item.get("snippet") or item.get("subject", ""),
+            "why_matched": (
+                f"Matched Git commit {item.get('short_commit')} "
+                f"{item.get('matched_field', 'subject')}."
+            ),
+            "symbol": None,
+            "commit": item,
+        }
+        for item in history_result.get("results", [])
+    ]
+
+
 def _children_context_hits(
     query: str,
     repo_root: Path,
@@ -1851,7 +2118,9 @@ def _children_context_hits(
     try:
         from .children import describe_child
     except Exception:
-        describe_child = lambda child: child.get("path", "")
+
+        def describe_child(child):
+            return child.get("path", "")
 
     results: list[dict] = []
     for child in children.get("children", []):
@@ -1892,16 +2161,22 @@ def scan_context(root: str = ".", scope: str | None = None, limit: int = 10) -> 
     docs = _context_docs_for_root(repo_root)
     code_files = [path for path in _code_files(repo_root) if _scope_includes(path, scope_path)]
     test_files = [path for path in _test_files(repo_root) if _scope_includes(path, scope_path)]
-    generated = [path for path in _generated_context_files(repo_root) if _scope_includes(path, scope_path)]
+    generated = [
+        path for path in _generated_context_files(repo_root) if _scope_includes(path, scope_path)
+    ]
     workboard = _workboard_snapshot(repo_root)
     children = _children_snapshot(repo_root)
     recent = _recent_summary(repo_root, limit=limit)
 
     plan_count = len((workboard or {}).get("listing", {}).get("plans", []))
-    task_count = sum(len(phase.get("tasks", [])) for phase in ((workboard or {}).get("current", {}).get("plan") or {}).get("phases", []))
+    task_count = sum(
+        len(phase.get("tasks", []))
+        for phase in ((workboard or {}).get("current", {}).get("plan") or {}).get("phases", [])
+    )
     current_summary = ((workboard or {}).get("current") or {}).get("summary")
     child_entries = [
-        child for child in (children or {}).get("children", [])
+        child
+        for child in (children or {}).get("children", [])
         if scope_path is None or _scope_includes(repo_root / child.get("path", ""), scope_path)
     ]
     unknown_children = [child for child in child_entries if child.get("status") == "unknown"]
@@ -1935,12 +2210,19 @@ def scan_context(root: str = ".", scope: str | None = None, limit: int = 10) -> 
         {
             "source_type": "children",
             "count": len(child_entries),
-            "examples": [child.get("path") for child in unknown_children[: min(3, limit)] or child_entries[: min(3, limit)]],
+            "examples": [
+                child.get("path")
+                for child in unknown_children[: min(3, limit)] or child_entries[: min(3, limit)]
+            ],
         },
         {
             "source_type": "recent",
-            "count": (recent or {}).get("counts", {}).get("commits", 0) + (recent or {}).get("counts", {}).get("working_tree_changes", 0),
-            "examples": [commit.get("subject") for commit in (recent or {}).get("commits", [])[: min(2, limit)]],
+            "count": (recent or {}).get("counts", {}).get("commits", 0)
+            + (recent or {}).get("counts", {}).get("working_tree_changes", 0),
+            "examples": [
+                commit.get("subject")
+                for commit in (recent or {}).get("commits", [])[: min(2, limit)]
+            ],
         },
     ]
 
@@ -1964,7 +2246,9 @@ def scan_context(root: str = ".", scope: str | None = None, limit: int = 10) -> 
         f"children: {len(child_entries)} ({len(unknown_children)} unknown)",
     ]
     if current_summary:
-        evidence.append(f"current plan: {current_summary.get('title')} [{current_summary.get('status')}]")
+        evidence.append(
+            f"current plan: {current_summary.get('title')} [{current_summary.get('status')}]"
+        )
 
     verification_commands: list[str] = []
     current_plan = ((workboard or {}).get("current") or {}).get("plan") or {}
@@ -2053,6 +2337,11 @@ def search_context(
         hits.extend(recent_hits)
         if not recent_hits:
             fallback_used.append("recent_hits_unavailable")
+    if "history" in allowed:
+        history_hits = _history_context_hits(query, repo_root, limit=limit)
+        hits.extend(history_hits)
+        if not history_hits:
+            fallback_used.append("history_hits_unavailable")
 
     if not hits:
         fallback_used.append("no_ranked_context_hits")
@@ -2062,7 +2351,9 @@ def search_context(
     seen: set[str] = set()
     ranked_hits: list[dict] = []
     for item in hits:
-        key = f"{item.get('source_type')}:{item.get('path')}:{item.get('line')}:{item.get('snippet')}"
+        key = (
+            f"{item.get('source_type')}:{item.get('path')}:{item.get('line')}:{item.get('snippet')}"
+        )
         if key in seen:
             continue
         seen.add(key)
@@ -2077,14 +2368,22 @@ def search_context(
     top = ranked_hits[0] if ranked_hits else None
     verification_commands: list[str] = []
     if top and top["source_type"] == "code" and top.get("path"):
-        verification_commands = test_map(path=top["path"], root=str(repo_root)).get("verification_commands", [])
-        recommended_next_action = f"Inspect {top['path']}:{top.get('line')} with edit_context before changing code."
+        verification_commands = test_map(path=top["path"], root=str(repo_root)).get(
+            "verification_commands", []
+        )
+        recommended_next_action = (
+            f"Inspect {top['path']}:{top.get('line')} with edit_context before changing code."
+        )
         next_best_tool = "edit_context"
     elif top and top["source_type"] == "workboard":
-        recommended_next_action = "Use the active workboard context to decide the next executable task."
+        recommended_next_action = (
+            "Use the active workboard context to decide the next executable task."
+        )
         next_best_tool = "verify_change" if top.get("task_id") else "change_plan"
     elif top and top["source_type"] == "docs":
-        recommended_next_action = "Read the matching project guidance, then narrow on the relevant code path."
+        recommended_next_action = (
+            "Read the matching project guidance, then narrow on the relevant code path."
+        )
         next_best_tool = "change_plan"
     elif top and top["source_type"] == "children":
         recommended_next_action = (
@@ -2093,10 +2392,19 @@ def search_context(
         )
         next_best_tool = "scan_context"
     elif top and top["source_type"] == "recent":
-        recommended_next_action = "Inspect the recent change first to understand what shifted since the last checkpoint."
+        recommended_next_action = (
+            "Inspect the recent change first to understand what shifted since the last checkpoint."
+        )
+        next_best_tool = "scan_context"
+    elif top and top["source_type"] == "history":
+        recommended_next_action = (
+            "Inspect the matching commit and its patch before drawing a historical conclusion."
+        )
         next_best_tool = "scan_context"
     else:
-        recommended_next_action = "Broaden the query or run scan_context to see what context surfaces are available."
+        recommended_next_action = (
+            "Broaden the query or run scan_context to see what context surfaces are available."
+        )
         next_best_tool = "scan_context"
 
     evidence = [

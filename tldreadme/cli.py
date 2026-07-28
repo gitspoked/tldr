@@ -1,10 +1,13 @@
 """CLI entry point - tldr init|watch|serve|ask"""
 
-import click
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import click
+
+from .config import get_setting
 
 AUDIT_PROFILE_CHOICES = ["owasp-web", "owasp-api", "owasp-llm", "owasp-mcp"]
 
@@ -32,6 +35,175 @@ def main(ctx):
 
 
 @main.command()
+@click.option(
+    "--provider",
+    type=click.Choice(["ollama", "litellm"], case_sensitive=False),
+    help="Model provider. Ollama is local-first; LiteLLM uses a configured proxy.",
+)
+@click.option("--ollama-url", default=None, help="Direct Ollama endpoint.")
+@click.option("--litellm-url", default=None, help="LiteLLM proxy endpoint.")
+@click.option("--embed-model", default=None, help="Embedding model or LiteLLM model alias.")
+@click.option("--chat-model", default=None, help="Chat model or LiteLLM model alias.")
+@click.option("--qdrant-url", default=None, help="Qdrant endpoint.")
+@click.option("--falkordb-url", default=None, help="FalkorDB Redis URL.")
+@click.option(
+    "--tool-profile",
+    type=click.Choice(["router", "full"], case_sensitive=False),
+    default=None,
+    help="Default MCP exposure: four router tools or the full specialist surface.",
+)
+@click.option(
+    "--allow-cloud-non-code",
+    is_flag=True,
+    help="Allow the selected host subscriptions to expand non-code context.",
+)
+@click.option(
+    "--cloud-subscription",
+    "cloud_subscriptions",
+    type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
+    multiple=True,
+    help="Host subscription allowed for expanded inference. Repeat to select more than one.",
+)
+@click.option(
+    "--allow-cloud-code",
+    is_flag=True,
+    help="Allow the selected host subscriptions to expand code-level context.",
+)
+@click.option(
+    "--acknowledge-cloud-warning",
+    is_flag=True,
+    help="Acknowledge that selected context may leave the local machine.",
+)
+@click.option(
+    "--check", is_flag=True, help="Report whether setup has been completed without writing."
+)
+@click.option("--json-output", is_flag=True, help="Print the configuration result as JSON.")
+def setup(
+    provider: str | None,
+    ollama_url: str | None,
+    litellm_url: str | None,
+    embed_model: str | None,
+    chat_model: str | None,
+    qdrant_url: str | None,
+    falkordb_url: str | None,
+    tool_profile: str | None,
+    allow_cloud_non_code: bool,
+    cloud_subscriptions: tuple[str, ...],
+    allow_cloud_code: bool,
+    acknowledge_cloud_warning: bool,
+    check: bool,
+    json_output: bool,
+):
+    """Configure the provider used by CLI and Codex/Claude plugin runtimes."""
+
+    from .config import (
+        DEFAULT_SETTINGS,
+        PROVIDER_MODEL_DEFAULTS,
+        configuration_status,
+        write_configuration,
+    )
+
+    if check:
+        status = configuration_status()
+        click.echo(json.dumps(status, indent=2) if json_output else status["reason"])
+        if not status["configured"]:
+            raise click.ClickException("Must run Configuration - Setup first.")
+        return
+
+    interactive = provider is None
+    if interactive:
+        provider = click.prompt(
+            "Model provider",
+            type=click.Choice(["ollama", "litellm"], case_sensitive=False),
+            default="ollama",
+            show_choices=True,
+        )
+
+    provider = provider.lower()
+    if provider == "litellm" and not litellm_url:
+        litellm_url = click.prompt(
+            "LiteLLM proxy URL",
+            default="http://localhost:4000",
+        )
+
+    if interactive:
+        tool_profile = click.prompt(
+            "MCP tool profile",
+            type=click.Choice(["router", "full"], case_sensitive=False),
+            default=get_setting("TLDREADME_TOOL_PROFILE", "router"),
+            show_choices=True,
+        )
+        click.echo()
+        click.echo("WARNING - SUBSCRIPTION / NON-CODE CONTEXT / EXPANDED INFERENCE")
+        click.echo("Codex [ ]  Claude [ ]  Gemini [ ]")
+        allow_cloud_non_code = click.confirm(
+            "ALLOW CLOUD NON-LOCAL INFERENCE FOR NON-CODE CONTEXT?",
+            default=False,
+        )
+        allow_cloud_code = click.confirm(
+            "EXPAND CODE-LEVEL INFERENCE WITH A CLOUD SUBSCRIPTION?",
+            default=False,
+        )
+        if allow_cloud_non_code or allow_cloud_code:
+            selected = click.prompt(
+                "Subscriptions (comma-separated: codex, claude, gemini)",
+                default="",
+                show_default=False,
+            )
+            cloud_subscriptions = tuple(
+                item.strip().lower() for item in selected.split(",") if item.strip()
+            )
+            acknowledge_cloud_warning = click.confirm(
+                "I understand selected context may leave this machine",
+                default=False,
+            )
+
+    tool_profile = tool_profile or get_setting("TLDREADME_TOOL_PROFILE", "router")
+    model_defaults = PROVIDER_MODEL_DEFAULTS[provider]
+    try:
+        result = write_configuration(
+            provider=provider,
+            ollama_url=ollama_url or DEFAULT_SETTINGS["OLLAMA_URL"],
+            litellm_url=litellm_url,
+            embed_model=embed_model or model_defaults["TLDREADME_EMBED_MODEL"],
+            chat_model=chat_model or model_defaults["TLDREADME_CHAT_MODEL"],
+            qdrant_url=qdrant_url or DEFAULT_SETTINGS["QDRANT_URL"],
+            falkordb_url=falkordb_url or DEFAULT_SETTINGS["FALKORDB_URL"],
+            allow_cloud_non_code=allow_cloud_non_code,
+            cloud_subscriptions=cloud_subscriptions,
+            allow_cloud_code=allow_cloud_code,
+            acknowledge_cloud_warning=acknowledge_cloud_warning,
+            tool_profile=tool_profile,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if json_output:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    click.echo(f"Configuration complete: {provider}")
+    click.echo(f"Saved: {result['path']}")
+    click.echo(f"Embedding model: {result['settings']['TLDREADME_EMBED_MODEL']}")
+    click.echo(f"Chat model: {result['settings']['TLDREADME_CHAT_MODEL']}")
+    click.echo(f"MCP tool profile: {result['settings']['TLDREADME_TOOL_PROFILE']}")
+    policy = result["inference_policy"]
+    subscriptions = ", ".join(policy.get("cloud_subscriptions", [])) or "none"
+    click.echo(
+        f"Cloud non-code inference: {'allowed' if policy.get('allow_cloud_non_code') else 'not allowed'} ({subscriptions})"
+    )
+    click.echo(
+        f"Cloud code-level inference: {'allowed' if policy.get('allow_cloud_code') else 'not allowed'}"
+    )
+    click.echo(
+        "Subscription choices are host routing preferences; they do not grant "
+        "API access or reuse consumer credentials."
+    )
+    click.echo("Run `tldr doctor` to verify services and exact model readiness.")
+    click.echo("Restart Codex or Claude Code after changing plugin configuration.")
+
+
+@main.command()
 @click.argument("directory", type=click.Path(exists=True))
 @click.option("--output", "-o", default=".claude", help="Output dir for generated context files")
 def init(directory: str, output: str):
@@ -41,8 +213,8 @@ def init(directory: str, output: str):
     call/import/data-flow graphs in FalkorDB, then generates
     context files that make any LLM immediately understand the codebase.
     """
-    from .runtime import ensure_tree_sitter_runtime
     from .pipeline import run_init
+    from .runtime import ensure_tree_sitter_runtime
 
     ensure_tree_sitter_runtime()
     run_init(Path(directory), output_dir=output)
@@ -94,13 +266,14 @@ def watch(directories: tuple[str, ...]):
 @click.option(
     "--tool-profile",
     type=click.Choice(["router", "full"], case_sensitive=False),
-    default="router",
+    default=lambda: get_setting("TLDREADME_TOOL_PROFILE", "router"),
     show_default=True,
     help="Expose the smaller router-first tool set or the full specialist surface.",
 )
 def serve(transport: str, host: str, port: int, tool_profile: str):
     """Start the MCP server over stdin/stdout or SSE."""
     from .mcp_server import start_server
+
     start_server(transport=transport, host=host, port=port, tool_profile=tool_profile)
 
 
@@ -110,6 +283,7 @@ def serve(transport: str, host: str, port: int, tool_profile: str):
 def ask(question: str, directory: str | None):
     """Ask a question about the indexed codebase. RAG-powered answer."""
     from .rag import ask_question
+
     answer = ask_question(question, scope=directory)
     click.echo(answer)
 
@@ -164,13 +338,39 @@ def _run_audit_cli(
 
 @audit.command("deps")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
-@click.option("--offline", is_flag=True, help="Prefer OSV-Scanner offline mode for dependency vulnerabilities.")
-@click.option("--download-offline-db", is_flag=True, help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.")
-@click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
-@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
-@click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanner when available.")
-@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
-@click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
+@click.option(
+    "--offline",
+    is_flag=True,
+    help="Prefer OSV-Scanner offline mode for dependency vulnerabilities.",
+)
+@click.option(
+    "--download-offline-db",
+    is_flag=True,
+    help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.",
+)
+@click.option(
+    "--kev-catalog",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.",
+)
+@click.option(
+    "--profile",
+    type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False),
+    help="Optional OWASP profile to shape follow-up guidance.",
+)
+@click.option(
+    "--prefer-snyk",
+    is_flag=True,
+    help="Prefer the authenticated Snyk CLI over the local default scanner when available.",
+)
+@click.option(
+    "--save-report",
+    is_flag=True,
+    help="Persist the audit JSON report under .tldr/security/reports.",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show the selected scanner command without executing it."
+)
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
 def audit_deps(
     root: str,
@@ -200,49 +400,156 @@ def audit_deps(
 
 @audit.command("code")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
-@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
-@click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanner when available.")
-@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
-@click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
+@click.option(
+    "--profile",
+    type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False),
+    help="Optional OWASP profile to shape follow-up guidance.",
+)
+@click.option(
+    "--prefer-snyk",
+    is_flag=True,
+    help="Prefer the authenticated Snyk CLI over the local default scanner when available.",
+)
+@click.option(
+    "--save-report",
+    is_flag=True,
+    help="Persist the audit JSON report under .tldr/security/reports.",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show the selected scanner command without executing it."
+)
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_code(root: str, profile: str | None, prefer_snyk: bool, save_report: bool, dry_run: bool, json_output: bool):
+def audit_code(
+    root: str,
+    profile: str | None,
+    prefer_snyk: bool,
+    save_report: bool,
+    dry_run: bool,
+    json_output: bool,
+):
     """Audit first-party code with Semgrep or Bandit."""
-    _run_audit_cli("code", root=root, dry_run=dry_run, json_output=json_output, profile=profile, prefer_snyk=prefer_snyk, save_report=save_report)
+    _run_audit_cli(
+        "code",
+        root=root,
+        dry_run=dry_run,
+        json_output=json_output,
+        profile=profile,
+        prefer_snyk=prefer_snyk,
+        save_report=save_report,
+    )
 
 
 @audit.command("secrets")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
-@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
-@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
-@click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
+@click.option(
+    "--profile",
+    type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False),
+    help="Optional OWASP profile to shape follow-up guidance.",
+)
+@click.option(
+    "--save-report",
+    is_flag=True,
+    help="Persist the audit JSON report under .tldr/security/reports.",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show the selected scanner command without executing it."
+)
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_secrets(root: str, profile: str | None, save_report: bool, dry_run: bool, json_output: bool):
+def audit_secrets(
+    root: str, profile: str | None, save_report: bool, dry_run: bool, json_output: bool
+):
     """Audit for committed secrets with Gitleaks."""
-    _run_audit_cli("secrets", root=root, dry_run=dry_run, json_output=json_output, profile=profile, save_report=save_report)
+    _run_audit_cli(
+        "secrets",
+        root=root,
+        dry_run=dry_run,
+        json_output=json_output,
+        profile=profile,
+        save_report=save_report,
+    )
 
 
 @audit.command("llm")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
-@click.option("--garak-config", type=click.Path(exists=True, dir_okay=False), help="Explicit Garak config file for the target model and probes.")
-@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
-@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
-@click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
+@click.option(
+    "--garak-config",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Explicit Garak config file for the target model and probes.",
+)
+@click.option(
+    "--profile",
+    type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False),
+    help="Optional OWASP profile to shape follow-up guidance.",
+)
+@click.option(
+    "--save-report",
+    is_flag=True,
+    help="Persist the audit JSON report under .tldr/security/reports.",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show the selected scanner command without executing it."
+)
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
-def audit_llm(root: str, garak_config: str | None, profile: str | None, save_report: bool, dry_run: bool, json_output: bool):
+def audit_llm(
+    root: str,
+    garak_config: str | None,
+    profile: str | None,
+    save_report: bool,
+    dry_run: bool,
+    json_output: bool,
+):
     """Audit an LLM target with Garak when an explicit config is provided."""
-    _run_audit_cli("llm", root=root, dry_run=dry_run, json_output=json_output, garak_config=garak_config, profile=profile, save_report=save_report)
+    _run_audit_cli(
+        "llm",
+        root=root,
+        dry_run=dry_run,
+        json_output=json_output,
+        garak_config=garak_config,
+        profile=profile,
+        save_report=save_report,
+    )
 
 
 @audit.command("all")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
-@click.option("--garak-config", type=click.Path(exists=True, dir_okay=False), help="Optional Garak config file to include LLM probes in the full audit.")
-@click.option("--offline", is_flag=True, help="Prefer OSV-Scanner offline mode for dependency vulnerabilities.")
-@click.option("--download-offline-db", is_flag=True, help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.")
-@click.option("--kev-catalog", type=click.Path(exists=True, dir_okay=False), help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.")
-@click.option("--profile", type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False), help="Optional OWASP profile to shape follow-up guidance.")
-@click.option("--prefer-snyk", is_flag=True, help="Prefer the authenticated Snyk CLI over the local default scanners where supported.")
-@click.option("--save-report", is_flag=True, help="Persist the audit JSON report under .tldr/security/reports.")
-@click.option("--dry-run", is_flag=True, help="Show the selected scanner command without executing it.")
+@click.option(
+    "--garak-config",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional Garak config file to include LLM probes in the full audit.",
+)
+@click.option(
+    "--offline",
+    is_flag=True,
+    help="Prefer OSV-Scanner offline mode for dependency vulnerabilities.",
+)
+@click.option(
+    "--download-offline-db",
+    is_flag=True,
+    help="Ask OSV-Scanner to download or refresh its offline vulnerability databases.",
+)
+@click.option(
+    "--kev-catalog",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional local CISA KEV JSON catalog to prioritize known exploited CVEs.",
+)
+@click.option(
+    "--profile",
+    type=click.Choice(AUDIT_PROFILE_CHOICES, case_sensitive=False),
+    help="Optional OWASP profile to shape follow-up guidance.",
+)
+@click.option(
+    "--prefer-snyk",
+    is_flag=True,
+    help="Prefer the authenticated Snyk CLI over the local default scanners where supported.",
+)
+@click.option(
+    "--save-report",
+    is_flag=True,
+    help="Persist the audit JSON report under .tldr/security/reports.",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show the selected scanner command without executing it."
+)
 @click.option("--json-output", is_flag=True, help="Print the raw audit payload as JSON.")
 def audit_all(
     root: str,
@@ -280,7 +587,9 @@ def audit_profiles(json_output: bool):
     from .audit import list_policy_profiles, render_policy_profiles
 
     profiles = list_policy_profiles()
-    click.echo(json.dumps(profiles, indent=2, default=str) if json_output else render_policy_profiles())
+    click.echo(
+        json.dumps(profiles, indent=2, default=str) if json_output else render_policy_profiles()
+    )
 
 
 @audit.command("kev-refresh")
@@ -315,8 +624,14 @@ def audit_kev_refresh(output: str, url: str, json_output: bool):
 @main.command(name="lsp", hidden=True)
 @click.argument("path", type=click.Path(exists=True, dir_okay=False))
 @click.argument("line", type=int)
-@click.option("--column", type=int, help="1-based column. Inferred from the nearest identifier if omitted.")
-@click.option("--root", type=click.Path(exists=True, file_okay=False), help="Workspace root for LSP initialization")
+@click.option(
+    "--column", type=int, help="1-based column. Inferred from the nearest identifier if omitted."
+)
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False),
+    help="Workspace root for LSP initialization",
+)
 @click.option("--no-references", is_flag=True, help="Skip the references request")
 def lsp_inspect(path: str, line: int, column: int | None, root: str | None, no_references: bool):
     """Query semantic info from the language server for a file position."""
@@ -335,7 +650,11 @@ def lsp_inspect(path: str, line: int, column: int | None, root: str | None, no_r
 @main.command(name="lsp-symbols", hidden=True)
 @click.argument("path", type=click.Path(exists=True, dir_okay=False))
 @click.argument("query")
-@click.option("--root", type=click.Path(exists=True, file_okay=False), help="Workspace root for LSP initialization")
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False),
+    help="Workspace root for LSP initialization",
+)
 @click.option("--limit", type=int, default=20, show_default=True, help="Max symbols to return")
 def lsp_symbols(path: str, query: str, root: str | None, limit: int):
     """Query workspace symbols from the language server."""
@@ -347,7 +666,12 @@ def lsp_symbols(path: str, query: str, root: str | None, limit: int):
 
 @main.command()
 @click.option("--fix", is_flag=True, help="Show install/start commands for non-OK checks.")
-@click.option("--diagnostics", "diagnostics_path", type=click.Path(exists=True, dir_okay=False), help="Also inspect LSP diagnostics for a source file.")
+@click.option(
+    "--diagnostics",
+    "diagnostics_path",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Also inspect LSP diagnostics for a source file.",
+)
 @click.option("--line", type=int, help="1-based line for --diagnostics")
 @click.option("--column", type=int, help="1-based column for --diagnostics")
 def doctor(fix: bool, diagnostics_path: str | None, line: int | None, column: int | None):
@@ -369,7 +693,9 @@ def doctor(fix: bool, diagnostics_path: str | None, line: int | None, column: in
         _run_doctor_fix_flow(fixable_checks)
     elif fixable_checks:
         click.echo()
-        click.echo("Tip: run `tldr doctor --fix` to choose install/start commands for non-OK checks.")
+        click.echo(
+            "Tip: run `tldr doctor --fix` to choose install/start commands for non-OK checks."
+        )
 
     if diagnostics_path:
         from .coding_tools import diagnostics_here
@@ -385,7 +711,9 @@ def doctor(fix: bool, diagnostics_path: str | None, line: int | None, column: in
 @main.command()
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
 @click.option("--since", help="ISO timestamp override instead of the stored summary checkpoint.")
-@click.option("--no-mark-checked", is_flag=True, help="Do not advance the summary checkpoint after printing.")
+@click.option(
+    "--no-mark-checked", is_flag=True, help="Do not advance the summary checkpoint after printing."
+)
 @click.option("--limit", type=int, default=10, show_default=True, help="Max items per section.")
 @click.option("--json-output", is_flag=True, help="Print the raw summary payload as JSON.")
 def summary(root: str, since: str | None, no_mark_checked: bool, limit: int, json_output: bool):
@@ -424,10 +752,13 @@ def plans_capture(root: str, json_output: bool):
 def _run_whats_next(root: str, json_output: bool):
     """Shared handler for the human-facing whats-next report."""
 
-    from .roadmap import render_whats_next_vibe, whats_next_vibe as build_whats_next_vibe
+    from .roadmap import render_whats_next_vibe
+    from .roadmap import whats_next_vibe as build_whats_next_vibe
 
     result = build_whats_next_vibe(root=root)
-    click.echo(json.dumps(result, indent=2, default=str) if json_output else render_whats_next_vibe(result))
+    click.echo(
+        json.dumps(result, indent=2, default=str) if json_output else render_whats_next_vibe(result)
+    )
 
 
 @main.command(name="whats-next")
@@ -463,7 +794,11 @@ def _run_current_roadmap(root: str, no_write: bool, json_output: bool):
 
 @main.command(name="current-roadmap")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
-@click.option("--no-write", is_flag=True, help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.")
+@click.option(
+    "--no-write",
+    is_flag=True,
+    help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.",
+)
 @click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
 def current_roadmap(root: str, no_write: bool, json_output: bool):
     """Build the current roadmap snapshot and optionally write TLDROADMAP.md."""
@@ -472,7 +807,11 @@ def current_roadmap(root: str, no_write: bool, json_output: bool):
 
 @main.command(name="current-vibe-roadmap", hidden=True)
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
-@click.option("--no-write", is_flag=True, help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.")
+@click.option(
+    "--no-write",
+    is_flag=True,
+    help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.",
+)
 @click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
 def current_vibe_roadmap_legacy(root: str, no_write: bool, json_output: bool):
     """Compatibility alias for the previous current-roadmap command name."""
@@ -487,20 +826,34 @@ def children():
 
 @children.command(name="list")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".", required=False)
-@click.option("--status", type=click.Choice(["unknown", "merged", "ignored"]), help="Optional status filter.")
-@click.option("--all", "include_ignored", is_flag=True, help="Include ignored children in the output.")
+@click.option(
+    "--status", type=click.Choice(["unknown", "merged", "ignored"]), help="Optional status filter."
+)
+@click.option(
+    "--all", "include_ignored", is_flag=True, help="Include ignored children in the output."
+)
 @click.option("--json-output", is_flag=True, help="Print the raw child payload as JSON.")
 def children_list(root: str, status: str | None, include_ignored: bool, json_output: bool):
     """List detected child subtrees and their acknowledgment status."""
     from .children import list_children
 
     result = list_children(root=root, status=status, include_ignored=include_ignored)
-    click.echo(json.dumps(result, indent=2, default=str) if json_output else _render_children_listing(result))
+    click.echo(
+        json.dumps(result, indent=2, default=str)
+        if json_output
+        else _render_children_listing(result)
+    )
 
 
 @children.command("merge")
 @click.argument("path")
-@click.option("--root", type=click.Path(exists=True, file_okay=False), default=".", show_default=True, help="Repository root.")
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False),
+    default=".",
+    show_default=True,
+    help="Repository root.",
+)
 @click.option("--note", help="Optional note explaining why the child is merged.")
 def children_merge(path: str, root: str, note: str | None):
     """Mark a child subtree as intentionally merged into this repository."""
@@ -512,7 +865,13 @@ def children_merge(path: str, root: str, note: str | None):
 
 @children.command("ignore")
 @click.argument("path")
-@click.option("--root", type=click.Path(exists=True, file_okay=False), default=".", show_default=True, help="Repository root.")
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False),
+    default=".",
+    show_default=True,
+    help="Repository root.",
+)
 @click.option("--note", help="Optional note explaining why the child is ignored.")
 def children_ignore(path: str, root: str, note: str | None):
     """Mark a child subtree as intentionally ignored."""

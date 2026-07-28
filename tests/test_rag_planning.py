@@ -1,5 +1,6 @@
 """Tests for grounded planning and backwards-flow helpers."""
 
+import subprocess
 from types import SimpleNamespace
 
 from tldreadme import rag
@@ -15,7 +16,9 @@ def _planning_snapshot(*, plan: dict | None = None, session: dict | None = None)
             "goal": plan.get("goal"),
         }
     return {
-        "repo_next_action": {"recommended_next_action": "Use repo_lookup to inspect the next concrete implementation target."},
+        "repo_next_action": {
+            "recommended_next_action": "Use repo_lookup to inspect the next concrete implementation target."
+        },
         "scan_context": {
             "source_counts": {"code": 12, "tests": 6, "docs": 4, "workboard": 1},
             "children": {"unknown_count": 0},
@@ -52,7 +55,9 @@ def test_suggest_goals_prefers_active_plan_and_filters_generic_maintenance(monke
                         "title": "Define audit command surface",
                         "status": "pending",
                         "files": ["tldreadme/cli.py", "tldreadme/runtime.py"],
-                        "verification_commands": [".venv/bin/python -m pytest -q tests/test_cli.py"],
+                        "verification_commands": [
+                            ".venv/bin/python -m pytest -q tests/test_cli.py"
+                        ],
                     }
                 ],
             }
@@ -64,7 +69,9 @@ def test_suggest_goals_prefers_active_plan_and_filters_generic_maintenance(monke
         "next_action": "Shape the audit categories and scanner capability map.",
         "verification_commands": [".venv/bin/python -m pytest -q tests/test_cli.py"],
     }
-    monkeypatch.setattr(rag, "_planning_snapshot", lambda _path: _planning_snapshot(plan=plan, session=session))
+    monkeypatch.setattr(
+        rag, "_planning_snapshot", lambda _path: _planning_snapshot(plan=plan, session=session)
+    )
 
     result = rag.suggest_goals(str(repo))
 
@@ -161,3 +168,28 @@ def test_auto_iterate_uses_ranked_candidate_goals_in_order(monkeypatch):
     assert result["iterations"][0]["goal"] == "Feature one"
     assert result["iterations"][1]["goal"] == "Feature two"
     assert result["rounds_completed"] == 2
+
+
+def test_read_recent_does_not_require_graph_backend(tmp_path):
+    source = tmp_path / "sample.py"
+    source.write_text("def sample():\n    return 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "sample.py"], cwd=tmp_path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-qm",
+            "Add sample",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    recent = rag.read_recent(scope=str(tmp_path), days=30)
+
+    assert recent[0]["file"] == "sample.py"
+    assert recent[0]["symbols_in_file"][0]["name"] == "sample"

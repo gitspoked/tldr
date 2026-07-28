@@ -1,363 +1,234 @@
-# 
-# TLDREADME.md
-#
-**TL;DR for any codebase. Privacy-first, local-first.**
+# TLDREADME
 
-Point it at a directory. It parses every function, embeds it, graphs the relationships, and serves it all via MCP. Your LLM gets full codebase context before you ask your first question.
+Local-first repository reconnaissance, code navigation, planning, and verification.
 
-**Your code never leaves your machine.** Ollama for inference, Qdrant and FalkorDB in local Docker containers. No API keys required. No code uploaded anywhere. Cloud providers are opt-in via LiteLLM when you want them.
+TLDREADME parses source with tree-sitter, indexes symbols in Qdrant, records
+relationships in FalkorDB, and exposes the resulting context through a CLI and
+MCP server. The fast `peek` path works without databases or a model provider.
 
-```
-tldr init /path/to/your/code    # parse, embed, graph, generate TLDR.md
-tldr serve                       # MCP server over stdio for Claude Code
-tldr serve --transport sse -p 8900  # network-accessible SSE transport
-tldr watch /path/to/your/code   # stay current on file saves
-tldr ask "how does X work?"     # RAG-powered answer from CLI
-tldr doctor --diagnostics path/to/file.py --line 42  # human-facing diagnostics report
-tldr audit all --dry-run        # preview the local security scanner selection
-tldr summary                    # what changed since the last summary checkpoint
-tldr plans-capture .            # paste notes until Ctrl-D, save a .tldr/roadmap/TLDRPLANS.<timestamp>.md drop
-tldr whats-next .               # show the next strategic question and grounded options
-tldr current-roadmap .          # refresh .tldr/roadmap/TLDRPLANS.md and write TLDROADMAP.md
-```
+Local Ollama, Qdrant, and FalkorDB are the default. TLDREADME does not pull
+models automatically. If a configured model is missing, loading, or
+unreachable, the request stops at a bounded deadline and returns a structured
+readiness error.
 
-## What It Does
+MCP tool results are sent to the client that called them. Connecting the server
+to a hosted client can therefore send selected repository context to that
+client. LiteLLM and expanded cloud inference are opt-in during setup.
 
-```
-Your Code
-  │
-  ├── tree-sitter ──── AST: every function, class, struct, import, call site
-  ├── Qdrant ──────── vector embeddings for semantic search
-  ├── FalkorDB ────── call graph, import graph, dependency graph
-  ├── LiteLLM ─────── RAG synthesis (default Ollama local, or OpenAI/Anthropic/OpenRouter)
-  ├── ripgrep ─────── fast text search with context
-  └── MCP Server ──── tools, resources, and prompts that make LLMs understand your code
-```
+## Quick start
 
-## The Tools
+Requirements:
 
-### The 80% - Just Show Me The Code
+- Python 3.11 or newer; Python 3.12 is recommended
+- [uv](https://docs.astral.sh/uv/) for plugin installs
+- Docker for Qdrant and FalkorDB
+- Ollama for the default local model path
+- ripgrep (`rg`) for fast text search
 
-| Tool | What |
-|------|------|
-| `know` | Everything about a symbol: definition, usages, callers, callees. One call. Start here. |
-| `read_grep` | Fast text search via rg. Exact strings, regex, error messages. |
-| `read_grep_files` | Which files contain this pattern? |
-| `read_semantic` | Hover, definition, references, and document symbols from the installed language server. |
-| `read_workspace_symbols` | Semantic symbol search through the installed language server. |
-
-### Router-Preferred Default Surface
-
-| Tool | What |
-|------|------|
-| `repo_next_action` | Resume work safely. Looks at sessions, overlaps, workboard state, and imported child trees, then recommends the next top-level tool. |
-| `repo_lookup` | Single read entry point. Internally chooses broad scan, federated search, symbol knowledge, impact lookup, or exact edit context. |
-| `change_plan` | Turns a coding goal into candidate files, risks, acceptance criteria, and ordered verification steps. |
-| `verify_change` | Checks workboard evidence and inferred verification commands, then reports pass/fail status and missing proof. |
-
-Every router-preferred tool returns the same high-signal fields: `summary`, `confidence`, `evidence`, `recommended_next_action`, `verification_commands`, and `fallback_used`.
-Use `repo_next_action` when resuming interrupted work, `repo_lookup` to understand the repo or a symbol, `change_plan` before editing, and `verify_change` before calling a task done.
-
-### Specialist Lookup Tools (`--tool-profile full`)
-
-| Tool | What |
-|------|------|
-| `scan_context` | Snapshot the repo surfaces available right now: code, tests, docs, generated TLDR files, workboard state, and recent changes. |
-| `search_context` | Search across those surfaces in one call and return ranked context hits with the next best follow-up tool. |
-| `edit_context` | Best first call before an edit. Returns the local snippet, enclosing symbol, semantic info, similar code, matching tasks, and tests. |
-| `test_map` | Finds the nearest likely tests and exact verification commands for a file or symbol. |
-| `pattern_search` | Finds reusable implementations so you can copy the local pattern instead of inventing a new one. |
-| `diagnostics_here` | Pulls LSP diagnostics for a file or exact position, including likely fix area and impacted symbols. |
-| `know` | Fast symbol knowledge: definition, usages, callers, and callees. |
-| `impact` | Severity rating + affected files + transitive dependents. Run before modifying. |
-
-### Deeper Graph Reads
-
-| Tool | What |
-|------|------|
-| `read_depends` | Full dependency chain from the graph. |
-| `read_flow` | Trace execution from entry point through call chain. |
-
-### The 5% - I Need To Think
-
-| Tool | What |
-|------|------|
-| `discover` | Find code by concept, not name. rg + semantic search merged. |
-| `read_similar` | Actual source code of similar implementations. See the pattern. |
-| `explain` | Full LLM-powered explanation: what it does, what depends on it, what to watch out for. |
-| `tldr` | RAG-powered summary of any module or directory. |
-
-### Backwards Flow - The Code Tells You What To Do
-
-| Tool | What |
-|------|------|
-| `suggest_goals` | Uses active plans, repo state, and concrete feature gaps to rank grounded next steps. |
-| `best_question` | Given a goal, turns it into the next concrete engineering question with file, symbol, risk, and verification hints. |
-| `goal_flow` | Cold-start planning chain: grounded goals → top goal → next best engineering question. |
-| `auto_iterate` | Walks a few ranked candidate goals in sequence without inventing new ones from thin context. |
-
-## Setup
-
-### Prerequisites
-
-- Python 3.11+ (3.12 recommended)
-- Docker (for Qdrant, FalkorDB, Ollama, LiteLLM)
-- ripgrep (`brew install ripgrep`)
-
-### Install
+Install from a checkout:
 
 ```bash
 git clone https://github.com/gitspoked/tldr.git
 cd tldr
 python3.12 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-.venv/bin/tldr doctor
-.venv/bin/tldr doctor --fix
+.venv/bin/pip install -e .
+.venv/bin/tldr setup
 ```
 
-`tldr doctor` checks the pinned Python/tree-sitter/ripgrep runtime, reports local service reachability, and shows which common LSP servers are available on `PATH`. Add `--fix` for an interactive checkbox prompt with install/start commands for anything missing.
-
-For human-facing code health, add `--diagnostics path/to/file.py` to `tldr doctor` to print LSP diagnostics, likely fix area, impacted symbols, and the first verification command worth running.
-
-`tldr summary` prints commits, working tree changes, workboard updates, and session notes since the last local summary checkpoint, then advances that checkpoint unless you pass `--no-mark-checked`.
-
-`tldr plans-capture` reads freeform notes, links, example repos, and pasted context from stdin until Ctrl-D, stores the raw drop under `.tldr/roadmap/TLDRPLANS.<timestamp>.md`, and refreshes the consolidated `.tldr/roadmap/TLDRPLANS.md` digest. Then `tldr whats-next` turns README intent, captured notes, workboard state, and grounded planning signals into the next strategic question to ask. `tldr current-roadmap` writes `TLDROADMAP.md` as the durable roadmap draft for the project, preserving the human-owned top section and refreshing only the lower generated section.
-
-Those planning commands are already the human-executable flow. You do not need wrapper scripts like `run-whats-next.sh` unless you want repo-local shortcuts.
-
-`tldr audit` is the local security pass. Use `tldr audit deps`, `code`, `secrets`, `llm`, or `all`. Add `--dry-run` to preview the selected scanner without executing it, and `--json-output` for automation-friendly output. The first pass prefers:
-- deps: `osv-scanner`, then `pip-audit`
-- code: `semgrep`, then `bandit`
-- secrets: `gitleaks`
-- llm: `garak` with an explicit `--garak-config PATH`
-
-Missing scanners degrade to doctor-style guidance instead of crashing. Start with `tldr audit all --dry-run`, then install the missing tools you actually want locally.
-
-### Audit Service
-
-`tldr audit` is intentionally local-first and human-first. It does not replace dedicated security platforms; it gives you a fast repo-local baseline that is safe to run before CI, before commits, or before handing work to an agent.
-
-Add `--save-report` when you want to persist the JSON payload under `.tldr/security/reports/` and refresh `.tldr/security/latest-audit.json`.
-
-Suggested human flow:
+For the default Ollama configuration, download the two models explicitly:
 
 ```bash
-.venv/bin/tldr audit all . --dry-run
-.venv/bin/tldr audit deps . --offline
-.venv/bin/tldr audit deps . --kev-catalog .tldr/security/kev.json
-.venv/bin/tldr audit deps . --prefer-snyk
-.venv/bin/tldr audit deps .
-.venv/bin/tldr audit code .
-.venv/bin/tldr audit code . --prefer-snyk
-.venv/bin/tldr audit secrets .
-.venv/bin/tldr audit code . --profile owasp-mcp
-.venv/bin/tldr audit profiles
-.venv/bin/tldr audit kev-refresh --output .tldr/security/known_exploited_vulnerabilities.json
-.venv/bin/tldr audit llm . --garak-config .tldr/garak.yml
-```
-
-Trust model:
-- local-first default: TLDREADME prefers local scanners and doctor-style install guidance
-- CVE/SCA truth: use the official NVD and OSV-backed scanners for baseline vulnerability checks
-- optional cloud layer: use Snyk when you want authenticated SaaS analysis, monitoring, and organization-level reporting
-
-Snyk is a good optional second layer, not the default first layer for this project. The official Snyk CLI requires authentication with `snyk auth`, then uses commands like `snyk test` for open-source dependencies, `snyk code test` for SAST, and `snyk monitor` for continuous monitoring. It can also emit JSON with `--json`, which makes it a reasonable future adapter for `tldr audit`. Because it is account-backed and networked, it does not fit the default privacy-first/local-first path as well as OSV-Scanner, pip-audit, Semgrep, Bandit, Gitleaks, and Garak.
-
-Practical recommendation:
-- use `tldr audit` first for local triage
-- use Snyk second if you want org policy, continuous monitoring, or cloud-backed code scanning
-- keep Garak or a future `snyk redteam` style pass for explicit adversarial AI testing, not every quick local audit
-
-Security extensions built into the current audit flow:
-- `--offline` and `--download-offline-db` on dependency scans prefer OSV-Scanner's local database path instead of assuming network access
-- `--kev-catalog PATH` annotates dependency findings with CISA Known Exploited Vulnerability priority when a local KEV JSON catalog is present
-- `--profile owasp-web|owasp-api|owasp-llm|owasp-mcp` adds policy-oriented follow-up guidance without pretending OWASP is a vulnerability feed
-- `--prefer-snyk` lets authenticated Snyk become the deps/code scanner without changing the local-first default
-- `--save-report` stores the latest audit JSON locally so humans and agents can inspect the current security state without rerunning scans
-- `tldr audit kev-refresh` caches the official CISA KEV catalog under `.tldr/security/`
-- `tldr audit profiles` shows the current OWASP-oriented profile set and the categories each one emphasizes
-
-Agent/MCP security surface:
-- `repo://security` exposes the latest saved audit report, recent local report files, KEV cache location, and supported profiles
-- `audit_run`, `audit_profiles`, and `audit_kev_refresh` are available in `--tool-profile full` for agent-driven security workflows without widening the router-default surface
-
-What to use when:
-- NVD and OSV: vulnerability truth and dependency correlation
-- CISA KEV: exploit-in-the-wild prioritization
-- OWASP profiles: secure-coding and review emphasis for the current repo surface
-- Snyk: optional authenticated second layer for SaaS-backed dependency and code scanning
-
-Raw `lsp` and `lsp-symbols` CLI commands still exist for internal debugging, but they are intentionally hidden from the normal human-facing command surface.
-
-For bedrock contract checks, run `.venv/bin/python -m pytest -m bedrock -q`. The pytest summary prints a GO/NO-GO bedrock gate report with the covered use case, similar use cases, and reliance weight for each critical contract test.
-
-### Start Infrastructure
-
-```bash
-docker compose up -d
-
-# Ollama runs natively (not in Docker) - pull models locally:
 ollama pull nomic-embed-text
 ollama pull qwen2.5-coder:3b-instruct
+docker compose up -d
+.venv/bin/tldr doctor
 ```
 
-### Index a Codebase
+TLDREADME never starts an Ollama download on behalf of a tool call.
+
+Index a repository and start the MCP server:
 
 ```bash
-tldr init /path/to/your/project
+.venv/bin/tldr init /path/to/project
+.venv/bin/tldr serve
 ```
 
-This will:
-
-1. Parse all code via tree-sitter (TypeScript, JavaScript, Python, Rust + 8 more)
-2. Extract dependencies from Cargo.toml, package.json, go.mod, pyproject.toml
-3. Embed symbols into Qdrant
-4. Build call/import/dependency graph in FalkorDB
-5. Cache top 100 symbols in a hot index
-6. Generate `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md`
-
-### Connect to Claude Code
-
-Add to your Claude Code MCP config:
-
-```json
-{
-  "mcpServers": {
-    "tldreadme": {
-      "command": "/path/to/tldreadme/.venv/bin/python3.12",
-      "args": ["-m", "tldreadme.mcp_server"]
-    }
-  }
-}
-```
-
-## LLM Backend
-
-Default: local Ollama (`qwen2.5-coder:3b-instruct` for synthesis, `nomic-embed-text` for embeddings).
-
-We advise larger parameter models if possible for local code inference. 
-
-Qwen Examples:
-    Model    		Size(Q4)   RAM needed
-   qwen2.5-coder:3b     1.9G         ~4GB     
-   qwen2.5-coder:7b     4.7G         ~8GB     
-   qwen2.5-coder:14b    9GB         ~12GB     
-   qwen2.5-coder:32b    20GB        ~24GB     
-   qwen3-coder-next     46GB        ~48GB     
-
-32B if you can, 7b works fine for code intel. 
-
-
-To use cloud providers, copy `.env.example` to `.env`, set `LITELLM_URL`, switch `QDRANT_URL` / `FALKORDB_URL` to the standard ports used by `docker-compose.llm.yml`, and uncomment your provider in `litellm-config.yaml`:
+For immediate reconnaissance with no model or database:
 
 ```bash
-cp .env.example .env
-
-# in .env
-LITELLM_URL=http://localhost:4000
-QDRANT_URL=http://localhost:6333
-FALKORDB_URL=redis://localhost:6379
-ANTHROPIC_API_KEY=sk-ant-...
-# or OPENAI_API_KEY / OPENROUTER_API_KEY
+.venv/bin/tldr peek /path/to/project
+.venv/bin/tldr peek /path/to/file.py
+.venv/bin/tldr peek /path/to/project --markdown
 ```
 
-Config only. No code change.
+See [SETUP.md](SETUP.md) for local, LiteLLM, and troubleshooting instructions.
 
-## Languages
+## Plugin marketplaces
 
-**Primary:** TypeScript, JavaScript, Python, Rust
+This repository contains marketplace manifests for both Codex and Claude Code.
+The plugin launches the pinned release with `uvx` and uses the same durable
+configuration as the CLI.
 
-**Secondary:** Go, C, C++, PHP, Java, Ruby, Swift, Kotlin, Lua, Zig
+Codex:
 
-**Dependencies extracted from:** Cargo.toml, package.json, go.mod, pyproject.toml, requirements.txt
+```bash
+codex plugin marketplace add gitspoked/tldr
+codex plugin add tldreadme@gitspoked
+```
 
-**Not scanned:** node_modules, target, .venv, dist. Dependencies are cataloged from manifests, not source-parsed.
+Claude Code:
+
+```text
+/plugin marketplace add gitspoked/tldr
+/plugin install tldreadme@gitspoked
+/reload-plugins
+```
+
+Run `tldr setup` before enabling the plugin. If setup is incomplete, the MCP
+server starts quickly with only `configuration_setup` available and reports:
+`Must run Configuration - Setup first.`
+
+## Tool profiles
+
+The default `router` profile deliberately exposes four stable tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `repo_next_action` | Recommend the next action from repository and session state. |
+| `repo_lookup` | Route repository, history, symbol, impact, search, and edit-context lookups. |
+| `change_plan` | Turn a goal into files, risks, steps, acceptance criteria, and checks. |
+| `verify_change` | Verify a change against tests, workboard evidence, and acceptance criteria. |
+
+These tools share the normalized fields `summary`, `confidence`, `evidence`,
+`recommended_next_action`, `verification_commands`, and `fallback_used`.
+
+The `full` profile adds direct history, search, graph, language-server,
+planning, workboard, and security tools:
+
+```bash
+tldr setup --provider ollama --tool-profile full
+# or for one server invocation:
+tldr serve --tool-profile full
+```
+
+Tools with unavailable hard dependencies are omitted from MCP `list_tools`
+instead of failing after selection. `repo://tooling` reports exposed, deferred,
+and suppressed tools with backend details. See [docs/TOOLS.md](docs/TOOLS.md)
+for the complete catalog and access rules.
+
+## Provider behavior
+
+TLDREADME uses direct HTTP APIs:
+
+- Ollama: `/api/tags`, `/api/embed`, and `/api/chat`
+- LiteLLM proxy: OpenAI-compatible `/v1/embeddings` and `/v1/chat/completions`
+
+Provider requests have transport timeouts and a hard wall-clock deadline. The
+default is 15 seconds and can be changed with
+`TLDREADME_MODEL_TIMEOUT_SECONDS`. Direct Ollama requests check the exact model
+against `/api/tags` before inference, so a missing model is reported without
+triggering a pull.
+
+LiteLLM credentials remain environment-managed. `tldr setup` stores endpoints,
+model aliases, tool profile, and inference policy, but not secrets. Codex,
+Claude, and Gemini consumer-subscription selections are routing preferences for
+a host integration; they do not grant provider access and are not reusable as
+LiteLLM credentials.
+
+## Main commands
+
+```bash
+tldr setup                         # configure provider, policy, and tool profile
+tldr setup --check                 # inspect saved setup without network probes
+tldr peek PATH                     # zero-infrastructure reconnaissance
+tldr init PATH                     # parse, embed, graph, and generate context
+tldr watch PATH                    # incrementally refresh an index
+tldr ask "question"                # answer from indexed repository context
+tldr serve                         # stdio MCP server, router profile by default
+tldr serve --transport sse -p 8900 # SSE MCP server
+tldr doctor                        # runtime and backend diagnostics
+tldr doctor --fix                  # interactive install/start suggestions
+tldr summary                       # changes since the local summary checkpoint
+tldr plans-capture PATH            # capture planning notes from stdin
+tldr whats-next PATH               # grounded next strategic question
+tldr current-roadmap PATH          # refresh the durable roadmap
+tldr audit all --dry-run           # preview local scanner selection
+```
 
 ## Architecture
 
-```
-tldreadme/
-├── cli.py          # init | watch | serve | ask | summary | roadmap | children
-├── parser.py       # compatibility facade for ASTs, deps, and docs
-├── asts.py         # tree-sitter AST extraction
-├── deps.py         # manifest dependency extraction
-├── context_docs.py # README/CLAUDE/CODEX/GEMINI/AGENTS/roadmap/notes/plans scanner
-├── embedder.py     # LiteLLM → Qdrant vectors
-├── grapher.py      # FalkorDB call/import/dependency graph
-├── lsp.py          # lightweight LSP client + semantic query helpers
-├── search.py       # ripgrep wrapper (rg_search, rg_files, rg_count)
-├── hot_index.py    # pre-cached top 100 symbols for instant lookup
-├── rag.py          # RAG engine + grounded planning helpers
-├── roadmap.py      # .tldr/roadmap/TLDRPLANS capture + TLDROADMAP generation
-├── chains.py       # daisy-chained tool sequences (know, impact, discover, explain)
-├── generator.py    # TLDR.md generator from indexed knowledge
-├── watcher.py      # fswatch incremental re-indexing
-├── pipeline.py     # orchestrates: parse → embed → graph → ge
-└── mcp_server.py   # MCP tools, resources, and prompts
+```text
+source files
+  -> tree-sitter parsing
+  -> Qdrant symbol embeddings
+  -> FalkorDB call/import/dependency graph
+  -> local hot index and generated context
+  -> CLI and MCP tools
 ```
 
-## Philosophy
+Key modules:
 
-- **Intelligence in, intelligence out.** The quality of TLDR.md determines how smart the LLM is about your code.
-- **Search before writing.** `read_similar` and `discover` exist so you don't reinvent what already exists.
-- **Backwards-first.** Let current repo state, active plans, and concrete feature gaps drive planning before freeform ideation.
-- **Start fast, go deeper only when needed.** `know` (instant) before `explain` (LLM). `impact` (fast) before refactoring.
-- **Scan your code, catalog your deps, fetch docs on demand.** Never parse node_modules or libraries when scanning.
+- `config.py` owns durable setup and inference policy.
+- `model_client.py` provides bounded Ollama and LiteLLM HTTP requests.
+- `asts.py`, `deps.py`, and `context_docs.py` extract repository structure.
+- `parser.py` is the compatibility facade over those extraction modules.
+- `embedder.py` owns Qdrant indexing and semantic lookup.
+- `grapher.py` owns FalkorDB indexing and graph queries.
+- `coding_tools.py` implements the four router tools and deterministic fallbacks.
+- `rag.py` implements indexed retrieval and grounded planning helpers.
+- `workboard.py` stores plans and sessions under `.tldr/work/`.
+- `mcp_server.py` owns MCP tools, resources, prompts, profiles, and capability filtering.
 
-## MCP Context
+## Security audit
 
-Beyond tools, TLDREADME now exposes MCP resources and prompts for stable context reads:
+`tldr audit` coordinates installed scanners and reports missing tools as setup
+guidance. The default preference order is:
 
-- Static resources: `repo://overview`, `repo://health`, `repo://tooling`, `repo://children`, `repo://roadmap`, `repo://notes`, `repo://plans-digest`
-- Dynamic resources: `repo://module/{path}`, `repo://symbol/{name}`, `repo://semantic/{path}?line=...`, `repo://workspace-symbols/{query}?path=...`
-- Prompts: `impact-review`, `module-brief`, `semantic-investigation`
-- Router-preferred tools: `repo_next_action`, `repo_lookup`, `change_plan`, `verify_change`
-- Specialist lookup tools in `full`: `scan_context`, `search_context`, `edit_context`, `test_map`, `pattern_search`, `diagnostics_here`, `know`, `impact`
-- Planning helpers in `full`: `capture_plans`, `whats_next`, `current_roadmap`, `suggest_goals`, `best_question`, `goal_flow`, `auto_iterate`
+- dependencies: OSV-Scanner, then pip-audit
+- source: Semgrep, then Bandit
+- secrets: Gitleaks
+- model endpoints: Garak with an explicit configuration
 
-`tldr serve` now defaults to `--tool-profile router`, which exposes a four-intent MCP surface for agent routers: resume, lookup, plan, and verify. Tool exposure is also capability-enforced: tools that require missing backends such as LSP, Qdrant, or FalkorDB are suppressed until those capabilities are available. Use `tldr serve --tool-profile full` when you want the complete debugging and specialist surface.
+Use `--prefer-snyk` for an authenticated Snyk second layer. `--offline`,
+`--kev-catalog`, and the `owasp-web`, `owasp-api`, `owasp-llm`, and `owasp-mcp`
+profiles provide local database and policy-oriented variants. Reports can be
+saved under `.tldr/security/reports/`.
 
-## Foundation Contract
+## Planning and workboard
 
-Treat the router-default surface as bedrock:
+Plans and resumable sessions are file-backed:
 
-- `repo_next_action` resumes or coordinates work
-- `repo_lookup` handles repo orientation, symbol lookup, impact lookup, and edit-time context
-- `change_plan` turns goals into executable edits
-- `verify_change` closes work with evidence and verification
-
-New agent-facing behavior should extend one of those four tools or stay in the `full` specialist profile. Workboard plans, sessions, and child-project registries are versioned file-backed documents under `.tldr/work/`, and `parser.py` remains the compatibility facade over the split parser modules.
-
-Human trust hierarchy:
-
-- bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md`
+- plans: `.tldr/work/plans/*.yaml`
+- sessions: `.tldr/work/sessions/current.<session_id>.yaml`
+- child-project registry: `.tldr/work/children.yaml`
+- captured notes: `.tldr/roadmap/TLDRPLANS.*.md`
 - planning digest: `.tldr/roadmap/TLDRPLANS.md`
-- tactical notes: `TLDRNOTES.md`
-- raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`
-- generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
-- operational state: `.tldr/work/*`
-- source of truth remains the code, tests, and manifests
 
-`TLDROADMAP.md` is intentionally mixed-trust: keep the human-owned section at the top, and let `tldr current-roadmap` regenerate only the lower auto-generated section.
+The `full` tool profile exposes plan, task, session, roadmap, and audit tools.
+The router profile reaches the same common workflows through its four stable
+entry points.
 
-## Workboard
+## Supported languages
 
-TLDREADME now includes a file-backed workboard for phased execution planning:
+Primary parsing support covers TypeScript, JavaScript, Python, and Rust.
+Additional grammars cover Go, C, C++, PHP, Java, Ruby, Swift, Kotlin, Lua, and
+Zig. Dependencies are extracted from Cargo, npm, Go, Python, and related
+manifests without parsing vendor directories.
 
-- Canonical plan files: `.tldr/work/plans/*.yaml`
-- Canonical live sessions: `.tldr/work/sessions/current.<session_id>.yaml`
-- MCP tools: `plan_create`, `plan_update`, `plan_list`, `plan_current`, `plan_archive`, `task_add`, `task_update`, `task_complete`, `session_note`, `session_update`
-- MCP resources: `repo://plans`, `repo://session/current`, `repo://plan/{id}`, `repo://task/{plan_id}/{task_id}`
-- MCP prompts: `resume-session`, `phase-review`, `done-check`
+## Development
 
-Each task supports acceptance criteria, verification commands, blockers, evidence, and next-step notes. Sessions keep only the low-noise state needed to resume and avoid overlap: current focus, next action, claimed files/symbols, blockers, and recent steps.
+```bash
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -m bedrock -q
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+uv build
+```
 
-## Child Projects
+The bedrock test marker protects the router surface and state-file
+compatibility. MCP integration coverage lives in `tools/mcp-smoke.py`.
 
-Imported nested subprojects are treated as part of the repo by default. TLDREADME can still surface them so humans can acknowledge intent instead of silently blending them in:
+## License
 
-- Detection file: `.tldr/work/children.yaml`
-- Human CLI: `tldr children list`, `tldr children merge path/to/child`, `tldr children ignore path/to/child`
-- `tldr summary` highlights newly detected `unknown` children such as imported repos or copied-in modules
-
-## License: MIT
+MIT. Copyright 2026 Matt Klein.

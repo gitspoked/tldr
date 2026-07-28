@@ -1,8 +1,9 @@
-"""RAG engine - retrieve from Qdrant + FalkorDB, synthesize via LiteLLM."""
+"""Repository retrieval and synthesis helpers."""
 
-from pathlib import Path
 import re
 import subprocess
+from pathlib import Path
+
 from ._shared import get_embedder, get_grapher
 from .lazy import load_module
 
@@ -39,18 +40,13 @@ GOAL_STOPWORDS = {
 }
 
 
-def _litellm():
-    """Load litellm only when an LLM-backed step is needed."""
+def _complete_chat(messages: list[dict[str, str]], *, max_tokens: int) -> str:
+    """Run chat synthesis through the bounded provider wrapper."""
 
-    return load_module("litellm")
-
-
-def _embedder_settings() -> tuple[str, str]:
-    """Load chat model settings lazily from the embedder module."""
-
-    from .embedder import CHAT_MODEL, _api_base
-
-    return CHAT_MODEL, _api_base()
+    return load_module("tldreadme.embedder").complete_chat(
+        messages,
+        max_tokens=max_tokens,
+    )
 
 
 def _coding_tools():
@@ -213,7 +209,9 @@ def _active_plan_candidate(snapshot: dict, repo_root: Path) -> dict | None:
         for task in phase.get("tasks", [])
         if task.get("status") != "done"
     ]
-    current_task = next((task for task in tasks if task.get("id") == session.get("current_task_id")), None)
+    current_task = next(
+        (task for task in tasks if task.get("id") == session.get("current_task_id")), None
+    )
     top_task = current_task or (tasks[0] if tasks else None)
 
     files = list(plan.get("scope", []))
@@ -264,7 +262,10 @@ def _feature_gap_candidates(snapshot: dict, repo_root: Path) -> list[dict]:
     watcher_text = _read_repo_text(repo_root, "tldreadme/watcher.py")
     readme_text = _read_repo_text(repo_root, "README.md")
     notes_text = _read_repo_text(repo_root, "TLDREADME.md")
-    audit_docs_present = any(token in (readme_text + "\n" + notes_text).lower() for token in ("audit", "semgrep", "pip-audit", "gitleaks", "garak"))
+    audit_docs_present = any(
+        token in (readme_text + "\n" + notes_text).lower()
+        for token in ("audit", "semgrep", "pip-audit", "gitleaks", "garak")
+    )
 
     if "def audit(" not in cli_text:
         evidence = [
@@ -329,7 +330,12 @@ def _format_goal_candidates(candidates: list[dict], repo_root: Path) -> str:
 
     lines = ["### Next Goals for Codebase Review", ""]
     for index, candidate in enumerate(candidates[:5], start=1):
-        files = ", ".join(f"`{_display_path(path, repo_root)}`" for path in candidate.get("files", [])[:4]) or "`(no file focus yet)`"
+        files = (
+            ", ".join(
+                f"`{_display_path(path, repo_root)}`" for path in candidate.get("files", [])[:4]
+            )
+            or "`(no file focus yet)`"
+        )
         lines.append(f"#### Goal {index}: {candidate['title']}")
         lines.append("")
         lines.append(f"**What to do**: {candidate['goal']}")
@@ -367,11 +373,13 @@ def ask_question(question: str, scope: str | None = None) -> str:
         if name:
             callers = grapher.get_callers(name)
             callees = grapher.get_callees(name)
-            graph_context.append({
-                "symbol": name,
-                "callers": callers[:5],
-                "callees": callees[:5],
-            })
+            graph_context.append(
+                {
+                    "symbol": name,
+                    "callers": callers[:5],
+                    "callees": callees[:5],
+                }
+            )
 
     # 3. Build context
     context = _build_context(similar_chunks, graph_context)
@@ -460,14 +468,10 @@ def tldr(path: str) -> str:
         f"{context}"
     )
 
-    chat_model, api_base = _embedder_settings()
-    resp = _litellm().completion(
-        model=chat_model,
+    return _complete_chat(
         messages=[{"role": "user", "content": prompt}],
-        api_base=api_base,
         max_tokens=1000,
     )
-    return resp.choices[0].message.content
 
 
 def suggest_goals(path: str) -> dict:
@@ -488,7 +492,9 @@ def suggest_goals(path: str) -> dict:
         text = f"{candidate['title']} {candidate['goal']} {candidate['why_now']}"
         if candidate.get("source") != "active_plan" and _is_low_signal_goal(text):
             continue
-        if candidate.get("source") != "active_plan" and _candidate_is_covered_by_active_plan(candidate, active_plan):
+        if candidate.get("source") != "active_plan" and _candidate_is_covered_by_active_plan(
+            candidate, active_plan
+        ):
             continue
         key = f"{candidate['title'].strip().lower()}::{candidate['goal'].strip().lower()}"
         if key in seen_candidates:
@@ -496,7 +502,9 @@ def suggest_goals(path: str) -> dict:
         seen_candidates.add(key)
         filtered_candidates.append(candidate)
 
-    ranked_candidates = sorted(filtered_candidates, key=lambda item: item.get("priority", 0), reverse=True)
+    ranked_candidates = sorted(
+        filtered_candidates, key=lambda item: item.get("priority", 0), reverse=True
+    )
     top_goal = ranked_candidates[0]["goal"] if ranked_candidates else None
 
     scan_context = snapshot.get("scan_context") or {}
@@ -527,13 +535,19 @@ def suggest_goals(path: str) -> dict:
             current_session.get("next_action")
             or current_session.get("current_focus")
             or (snapshot.get("repo_next_action") or {}).get("recommended_next_action")
-            or ("Start with the top ranked candidate and confirm it with repo_lookup." if ranked_candidates else "Use repo_lookup to gather more grounded context.")
+            or (
+                "Start with the top ranked candidate and confirm it with repo_lookup."
+                if ranked_candidates
+                else "Use repo_lookup to gather more grounded context."
+            )
         ),
         "active_plan": {
             "id": current_plan.get("id"),
             "title": current_plan.get("title"),
             "goal": current_plan.get("goal"),
-        } if current_plan else None,
+        }
+        if current_plan
+        else None,
     }
 
 
@@ -552,7 +566,9 @@ def best_question(goal: str, path: str | None = None) -> dict:
     except Exception:
         plan = {}
 
-    candidate_files = [_display_path(file_path, repo_root) for file_path in plan.get("candidate_files", [])]
+    candidate_files = [
+        _display_path(file_path, repo_root) for file_path in plan.get("candidate_files", [])
+    ]
     likely_symbols = _dedupe(list(plan.get("likely_symbols", [])))
     verification_commands = _dedupe(list(plan.get("verification_commands", [])))
     risks = _dedupe(list(plan.get("risks", [])))
@@ -567,20 +583,18 @@ def best_question(goal: str, path: str | None = None) -> dict:
     if candidate_files and likely_symbols:
         the_question = (
             f"What is the smallest end-to-end change needed in `{candidate_files[0]}` around "
-            f"`{likely_symbols[0]}` to achieve \"{goal}\", and which verification command should prove it?"
+            f'`{likely_symbols[0]}` to achieve "{goal}", and which verification command should prove it?'
         )
     elif candidate_files:
         the_question = (
             f"What is the smallest end-to-end change needed in `{candidate_files[0]}` to achieve "
-            f"\"{goal}\", and which verification command should prove it?"
+            f'"{goal}", and which verification command should prove it?'
         )
     elif likely_symbols:
-        the_question = (
-            f"Which symbol should be changed first to achieve \"{goal}\", and what verification should prove the change is correct?"
-        )
+        the_question = f'Which symbol should be changed first to achieve "{goal}", and what verification should prove the change is correct?'
     else:
         the_question = (
-            f"What concrete file or symbol should be targeted first to achieve \"{goal}\" safely?"
+            f'What concrete file or symbol should be targeted first to achieve "{goal}" safely?'
         )
 
     answer_lines = [
@@ -590,13 +604,19 @@ def best_question(goal: str, path: str | None = None) -> dict:
         f"- {lookup.get('recommended_next_action') or plan.get('recommended_next_action') or 'Narrow the first edit target before changing code.'}",
     ]
     if candidate_files:
-        answer_lines.append("- Primary edit targets: " + ", ".join(f"`{path}`" for path in candidate_files[:4]))
+        answer_lines.append(
+            "- Primary edit targets: " + ", ".join(f"`{path}`" for path in candidate_files[:4])
+        )
     if likely_symbols:
-        answer_lines.append("- Likely symbols: " + ", ".join(f"`{name}`" for name in likely_symbols[:4]))
+        answer_lines.append(
+            "- Likely symbols: " + ", ".join(f"`{name}`" for name in likely_symbols[:4])
+        )
     if risks:
         answer_lines.append("- Risks: " + "; ".join(risks[:3]))
     if verification_commands:
-        answer_lines.append("- Verification: " + "; ".join(f"`{command}`" for command in verification_commands[:3]))
+        answer_lines.append(
+            "- Verification: " + "; ".join(f"`{command}`" for command in verification_commands[:3])
+        )
     if lookup.get("evidence"):
         answer_lines.append("")
         answer_lines.append("Grounding evidence:")
@@ -608,7 +628,8 @@ def best_question(goal: str, path: str | None = None) -> dict:
         "answer": "\n".join(answer_lines).strip(),
         "relevant_symbols": likely_symbols[:8],
         "relevant_files": candidate_files[:8],
-        "recommended_next_action": lookup.get("recommended_next_action") or plan.get("recommended_next_action"),
+        "recommended_next_action": lookup.get("recommended_next_action")
+        or plan.get("recommended_next_action"),
         "verification_commands": verification_commands[:5],
         "lookup": {
             "lookup_mode": lookup.get("lookup_mode"),
@@ -625,16 +646,23 @@ def best_question(goal: str, path: str | None = None) -> dict:
 
 
 def auto_iterate(path: str, goal: str | None = None, rounds: int = 2) -> dict:
-    """Repeat the backwards-flow loop for a few rounds.
-
-    Uses the codebase analysis to seed the first goal, then asks the model for
-    the next highest-value follow-up goal after each answer.
-    """
+    """Walk the highest-ranked grounded goals for a bounded number of rounds."""
 
     rounds = max(1, min(rounds, 5))
     goals_result = suggest_goals(path)
     candidate_goals = list(goals_result.get("candidate_goals", []))
-    current_goal = goal.strip() if goal else (goals_result.get("top_goal") or (candidate_goals[0]["goal"] if candidate_goals else goals_result["suggested_goals"][:800]))
+    current_goal = (
+        goal.strip()
+        if goal
+        else (
+            goals_result.get("top_goal")
+            or (
+                candidate_goals[0]["goal"]
+                if candidate_goals
+                else goals_result["suggested_goals"][:800]
+            )
+        )
+    )
     iterations = []
     used_goals: set[str] = set()
 
@@ -658,7 +686,11 @@ def auto_iterate(path: str, goal: str | None = None, rounds: int = 2) -> dict:
             break
 
         next_goal = next(
-            (candidate["goal"] for candidate in candidate_goals if candidate.get("goal") and candidate["goal"] not in used_goals),
+            (
+                candidate["goal"]
+                for candidate in candidate_goals
+                if candidate.get("goal") and candidate["goal"] not in used_goals
+            ),
             None,
         )
         if not next_goal:
@@ -677,26 +709,27 @@ def auto_iterate(path: str, goal: str | None = None, rounds: int = 2) -> dict:
 
 
 def read_recent(scope: str | None = None, days: int = 7) -> list[dict]:
-    """What changed recently? Uses git log to find recently modified symbols.
-
-    Returns recently changed files with their modified symbols cross-referenced
-    against the indexed knowledge in Qdrant/FalkorDB.
-    """
+    """Return recently changed files and any symbols parsed from their current contents."""
+    scope_path = Path(scope).resolve() if scope else Path.cwd().resolve()
+    repo_root = _repo_root(str(scope_path))
     cmd = [
-        "git", "log",
+        "git",
+        "log",
         f"--since={days} days ago",
         "--name-only",
         "--pretty=format:%H|%an|%s|%ai",
         "--diff-filter=AMR",
     ]
-    if scope:
-        cmd.append("--")
-        cmd.append(scope)
+    if scope and scope_path != repo_root:
+        cmd.extend(["--", str(scope_path.relative_to(repo_root))])
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30,
-            cwd=scope or ".",
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=repo_root,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return []
@@ -721,8 +754,6 @@ def read_recent(scope: str | None = None, days: int = 7) -> list[dict]:
         elif current_commit is not None:
             current_commit["files"].append(line)
 
-    # Cross-reference changed files with indexed symbols
-    grapher = get_grapher()
     recent = []
     seen_files = set()
 
@@ -733,27 +764,30 @@ def read_recent(scope: str | None = None, days: int = 7) -> list[dict]:
             seen_files.add(f)
 
             symbols = []
-            try:
-                qresult = grapher.graph.query(
-                    "MATCH (f:File {path: $path})-[:DEFINES]->(s:Symbol) "
-                    "RETURN s.name, s.kind, s.signature, s.line",
-                    {"path": f},
-                )
-                symbols = [
-                    {"name": r[0], "kind": r[1], "signature": r[2], "line": r[3]}
-                    for r in qresult.result_set
-                ]
-            except Exception:
-                pass
+            source_path = repo_root / f
+            if source_path.is_file():
+                parsed = load_module("tldreadme.parser").parse_file(source_path)
+                if parsed is not None:
+                    symbols = [
+                        {
+                            "name": symbol.name,
+                            "kind": symbol.kind,
+                            "signature": symbol.signature,
+                            "line": symbol.line,
+                        }
+                        for symbol in parsed.symbols
+                    ]
 
-            recent.append({
-                "file": f,
-                "last_commit": commit["hash"],
-                "author": commit["author"],
-                "message": commit["message"],
-                "date": commit["date"],
-                "symbols_in_file": symbols,
-            })
+            recent.append(
+                {
+                    "file": f,
+                    "last_commit": commit["hash"],
+                    "author": commit["author"],
+                    "message": commit["message"],
+                    "date": commit["date"],
+                    "symbols_in_file": symbols,
+                }
+            )
 
     return recent
 
@@ -791,11 +825,7 @@ def _synthesize(question: str, context: str) -> str:
         f"## Question\n\n{question}"
     )
 
-    chat_model, api_base = _embedder_settings()
-    resp = _litellm().completion(
-        model=chat_model,
+    return _complete_chat(
         messages=[{"role": "user", "content": prompt}],
-        api_base=api_base,
         max_tokens=2000,
     )
-    return resp.choices[0].message.content

@@ -71,7 +71,18 @@ def scan_context_docs(
     """Scan a directory tree for context and documentation markdown files."""
 
     if exclude is None:
-        exclude = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr", ".claude"}
+        exclude = {
+            "node_modules",
+            ".git",
+            "__pycache__",
+            "target",
+            ".venv",
+            "venv",
+            "dist",
+            "build",
+            ".tldr",
+            ".claude",
+        }
 
     docs: list[ContextDoc] = []
     for path in root.rglob("*.md"):

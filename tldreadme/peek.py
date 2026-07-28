@@ -175,6 +175,7 @@ def peek_target(path: Path | str) -> Dict[str, Any]:
         if hot_index_path.exists():
             try:
                 from .hot_index import HotIndex
+
                 hot_idx = HotIndex.load(hot_index_path)
                 if hot_idx:
                     result["hot_symbols"] = [
@@ -208,6 +209,7 @@ def peek_target(path: Path | str) -> Dict[str, Any]:
 
 def _walk_limited(root: Path, max_depth: int = MAX_SCAN_DEPTH) -> Iterator[Path]:
     """Yield file paths under *root* up to *max_depth* levels, skipping noise dirs and symlinks."""
+
     def _recurse(directory: Path, current_depth: int) -> Iterator[Path]:
         if current_depth > max_depth:
             return
@@ -314,6 +316,7 @@ def _extract_symbols(target: Path) -> list[dict]:
         return []
     try:
         from .asts import parse_file
+
         result = parse_file(target, isolate=False)
         if result and result.symbols:
             return [{"name": s.name, "kind": s.kind, "line": s.line} for s in result.symbols]
@@ -389,27 +392,31 @@ def _enrich_live_services(
     fallback_used: list[str],
 ) -> None:
     """Layer 3: opportunistically query Qdrant and FalkorDB if they respond within 1s."""
-    import os
+    from .config import get_setting
 
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-    falkordb_url = os.getenv("FALKORDB_URL", "redis://localhost:6379")
+    qdrant_url = get_setting("QDRANT_URL")
+    falkordb_url = get_setting("FALKORDB_URL")
 
     try:
         import httpx
+
         resp = httpx.get(f"{qdrant_url}/collections", timeout=1.0)
         if resp.status_code == 200:
             enrichment_layers.append("qdrant")
             try:
                 from ._shared import get_embedder
+
                 embedder = get_embedder()
                 query = target.stem if target.is_file() else target.name
                 similar = embedder.search_similar(query, limit=5)
                 for chunk in similar:
-                    result["related"].append({
-                        "name": chunk.get("symbol_name", chunk.get("name", "")),
-                        "relationship": "semantically similar",
-                        "file": chunk.get("file", ""),
-                    })
+                    result["related"].append(
+                        {
+                            "name": chunk.get("symbol_name", chunk.get("name", "")),
+                            "relationship": "semantically similar",
+                            "file": chunk.get("file", ""),
+                        }
+                    )
             except Exception:
                 fallback_used.append("qdrant_search_failed")
     except Exception:
@@ -417,10 +424,12 @@ def _enrich_live_services(
 
     try:
         from urllib.parse import urlparse
+
         parsed = urlparse(falkordb_url)
         host = parsed.hostname or "localhost"
         port = parsed.port or 6379
         import socket
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1.0)
         sock.connect((host, port))
@@ -432,15 +441,18 @@ def _enrich_live_services(
             if target.is_file():
                 try:
                     from ._shared import get_grapher
+
                     grapher = get_grapher()
                     for sym in result.get("symbols", [])[:5]:
                         callers = grapher.get_callers(sym["name"])
                         for c in callers[:3]:
-                            result["related"].append({
-                                "name": c.get("name", ""),
-                                "relationship": "calls this",
-                                "file": c.get("file", ""),
-                            })
+                            result["related"].append(
+                                {
+                                    "name": c.get("name", ""),
+                                    "relationship": "calls this",
+                                    "file": c.get("file", ""),
+                                }
+                            )
                 except Exception:
                     fallback_used.append("falkordb_query_failed")
     except Exception:
@@ -482,7 +494,8 @@ def render_peek(result: dict) -> str:
                 else ""
             )
             parts = [
-                p for p in [version_part, f"{stats['files']} files", f"{stats['lines']:,} lines"]
+                p
+                for p in [version_part, f"{stats['files']} files", f"{stats['lines']:,} lines"]
                 if p
             ]
             lines.append(f"   {' . '.join(parts)}")
@@ -648,15 +661,11 @@ def peek_to_router_result(peek_result: dict) -> dict:
         summary = readme["summary"][:200]
     elif project:
         summary = (
-            f"{project['name']}: {stats.get('files', 0)} files, "
-            f"{stats.get('lines', 0):,} lines"
+            f"{project['name']}: {stats.get('files', 0)} files, {stats.get('lines', 0):,} lines"
         )
     else:
         target_name = Path(peek_result["path"]).name
-        summary = (
-            f"{target_name}: {stats.get('files', 0)} files, "
-            f"{stats.get('lines', 0):,} lines"
-        )
+        summary = f"{target_name}: {stats.get('files', 0)} files, {stats.get('lines', 0):,} lines"
 
     if "qdrant" in layers or "falkordb" in layers:
         confidence = 0.9

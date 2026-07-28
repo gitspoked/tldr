@@ -3,17 +3,14 @@
 import tempfile
 from pathlib import Path
 
-from tldreadme.search import rg_search, rg_files, rg_count, format_hits_for_llm
+from tldreadme.search import format_hits_for_llm, rg_count, rg_files, rg_search
 
 
 def _make_project(tmpdir):
     """Create a small project to search in."""
     root = Path(tmpdir)
     (root / "main.py").write_text(
-        "def main():\n"
-        "    print('hello world')\n"
-        "    result = process_data()\n"
-        "    return result\n"
+        "def main():\n    print('hello world')\n    result = process_data()\n    return result\n"
     )
     (root / "lib.py").write_text(
         "def process_data():\n"
@@ -24,8 +21,7 @@ def _make_project(tmpdir):
         "    pass\n"
     )
     (root / "config.py").write_text(
-        'DATABASE_URL = "postgres://localhost/mydb"\n'
-        'API_KEY = "secret"\n'
+        'DATABASE_URL = "postgres://localhost/mydb"\nAPI_KEY = "secret"\n'
     )
     return root
 
