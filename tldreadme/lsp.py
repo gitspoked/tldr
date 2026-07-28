@@ -1,16 +1,15 @@
 """Lightweight LSP helpers for semantic code intelligence."""
 
-from dataclasses import dataclass
-from pathlib import Path
-from shutil import which
-from urllib.parse import unquote, urlparse
 import json
 import os
 import re
 import select
 import subprocess
 import sys
-
+from dataclasses import dataclass
+from pathlib import Path
+from shutil import which
+from urllib.parse import unquote, urlparse
 
 LANGUAGE_IDS = {
     ".py": "python",
@@ -33,7 +32,11 @@ LANGUAGE_IDS = {
 }
 
 SERVER_CANDIDATES = {
-    "python": [("basedpyright-langserver", "--stdio"), ("pyright-langserver", "--stdio"), ("pylsp",)],
+    "python": [
+        ("basedpyright-langserver", "--stdio"),
+        ("pyright-langserver", "--stdio"),
+        ("pylsp",),
+    ],
     "typescript": [("typescript-language-server", "--stdio")],
     "typescriptreact": [("typescript-language-server", "--stdio")],
     "javascript": [("typescript-language-server", "--stdio")],
@@ -99,7 +102,7 @@ class LspSession:
             "initialize",
             {
                 "processId": os.getpid(),
-                "clientInfo": {"name": "tldreadme", "version": "0.1.2"},
+                "clientInfo": {"name": "tldreadme", "version": "0.1.3"},
                 "rootUri": root.resolve().as_uri(),
                 "capabilities": {
                     "textDocument": {
@@ -111,7 +114,9 @@ class LspSession:
                     },
                     "workspace": {"workspaceFolders": True},
                 },
-                "workspaceFolders": [{"uri": root.resolve().as_uri(), "name": root.name or str(root)}],
+                "workspaceFolders": [
+                    {"uri": root.resolve().as_uri(), "name": root.name or str(root)}
+                ],
             },
         )
         self.notify("initialized", {})
@@ -326,7 +331,9 @@ def semantic_inspect(
         session.initialize(workspace_root)
         session.open_document(file_path, server.language_id, text)
         hover = session.request("textDocument/hover", _text_document_position(file_path, position))
-        definitions = session.request("textDocument/definition", _text_document_position(file_path, position))
+        definitions = session.request(
+            "textDocument/definition", _text_document_position(file_path, position)
+        )
         references = []
         if include_references:
             references = session.request(
@@ -407,14 +414,18 @@ def document_diagnostics(path: str, *, root: str | None = None) -> dict:
                     "textDocument/diagnostic",
                     {"textDocument": {"uri": file_path.as_uri()}},
                 )
-                diagnostics = normalize_document_diagnostics(diagnostic_result, uri=file_path.as_uri())
+                diagnostics = normalize_document_diagnostics(
+                    diagnostic_result, uri=file_path.as_uri()
+                )
                 diagnostic_source = "textDocument/diagnostic"
             except RuntimeError:
                 diagnostics = []
 
         if not diagnostics:
             try:
-                session.request("textDocument/documentSymbol", {"textDocument": {"uri": file_path.as_uri()}})
+                session.request(
+                    "textDocument/documentSymbol", {"textDocument": {"uri": file_path.as_uri()}}
+                )
             except RuntimeError:
                 pass
             session.poll_notifications()
@@ -529,7 +540,9 @@ def normalize_locations(result: object) -> list[dict]:
             continue
 
         uri = item.get("uri") or item.get("targetUri")
-        range_data = item.get("range") or item.get("targetSelectionRange") or item.get("targetRange")
+        range_data = (
+            item.get("range") or item.get("targetSelectionRange") or item.get("targetRange")
+        )
         if not uri or not range_data:
             continue
 
@@ -654,7 +667,9 @@ def normalize_publish_diagnostics(messages: list[dict], *, path: Path | None = N
     return normalized
 
 
-def _normalize_diagnostic_item(item: dict, *, uri: str | None = None, path: str | None = None) -> dict:
+def _normalize_diagnostic_item(
+    item: dict, *, uri: str | None = None, path: str | None = None
+) -> dict:
     """Normalize a single LSP diagnostic object."""
 
     range_data = item.get("range", {})

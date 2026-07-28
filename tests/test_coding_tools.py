@@ -99,9 +99,14 @@ def test_edit_context_merges_semantic_tests_and_work_items(monkeypatch, tmp_path
     monkeypatch.setattr(
         coding_tools,
         "_knowledge_for_symbol",
-        lambda *_args, **_kwargs: {"definition": {"file": str(source), "line": 1}, "callers": [{"name": "caller"}]},
+        lambda *_args, **_kwargs: {
+            "definition": {"file": str(source), "line": 1},
+            "callers": [{"name": "caller"}],
+        },
     )
-    monkeypatch.setattr(coding_tools, "_similar_for_symbol", lambda _symbol: [{"symbol": "sample_variant"}])
+    monkeypatch.setattr(
+        coding_tools, "_similar_for_symbol", lambda _symbol: [{"symbol": "sample_variant"}]
+    )
     monkeypatch.setattr(
         coding_tools,
         "test_map",
@@ -334,6 +339,44 @@ def test_repo_lookup_dispatches_to_search_and_maps_specialist_follow_up(monkeypa
     assert result["next_best_tool"] == "repo_lookup"
 
 
+def test_repo_lookup_dispatches_commit_questions_to_history(monkeypatch, tmp_path):
+    from tldreadme import history
+
+    mark = chr(0x2014)
+    monkeypatch.setattr(
+        history,
+        "search_history",
+        lambda *_args, **_kwargs: {
+            "results": [
+                {
+                    "commit": "a" * 40,
+                    "short_commit": "aaaaaaa",
+                    "subject": f"Use prose {mark} carefully",
+                    "matched_field": "subject",
+                    "match_kind": "exact_unicode",
+                }
+            ],
+            "fallback_used": [],
+        },
+    )
+
+    result = coding_tools.repo_lookup(
+        query="find em dash in commit messages",
+        root=str(tmp_path),
+        history_all_refs=True,
+        history_since="2026-03-01",
+        history_until="2026-04-30",
+    )
+
+    assert result["lookup_mode"] == "history"
+    assert result["dispatched_tool"] == "history_search"
+    assert result["dispatched_arguments"]["all_refs"] is True
+    assert result["dispatched_arguments"]["since"] == "2026-03-01"
+    assert result["dispatched_arguments"]["until"] == "2026-04-30"
+    assert result["history"]["results"][0]["matched_field"] == "subject"
+    assert result["next_best_tool"] == "repo_lookup"
+
+
 def test_diagnostics_here_returns_likely_fix_area(monkeypatch, tmp_path):
     root = tmp_path
     source = root / "app.py"
@@ -407,7 +450,17 @@ def test_pattern_search_prefers_reusable_matches(monkeypatch, tmp_path):
     monkeypatch.setattr(
         coding_tools,
         "_discover_for_goal",
-        lambda *_args, **_kwargs: {"merged": [{"source": "semantic", "file": str(source), "line": 1, "symbol": "helper", "score": 0.8}]},
+        lambda *_args, **_kwargs: {
+            "merged": [
+                {
+                    "source": "semantic",
+                    "file": str(source),
+                    "line": 1,
+                    "symbol": "helper",
+                    "score": 0.8,
+                }
+            ]
+        },
     )
     monkeypatch.setattr(
         coding_tools,
@@ -417,7 +470,10 @@ def test_pattern_search_prefers_reusable_matches(monkeypatch, tmp_path):
     monkeypatch.setattr(
         coding_tools,
         "test_map",
-        lambda **_kwargs: {"verification_commands": ["python -m pytest -q tests/test_service.py"], "test_files": []},
+        lambda **_kwargs: {
+            "verification_commands": ["python -m pytest -q tests/test_service.py"],
+            "test_files": [],
+        },
     )
 
     result = coding_tools.pattern_search(query="fallback helper", root=str(root))
@@ -524,7 +580,9 @@ def test_scan_context_reports_repo_surfaces(monkeypatch, tmp_path):
             "listing": {"plans": [{"id": "plan-1", "title": "Plan", "status": "in_progress"}]},
             "current": {
                 "summary": {"title": "Plan", "status": "in_progress"},
-                "plan": {"phases": [{"tasks": [{"verification_commands": ["python -m pytest -q"]}]}]},
+                "plan": {
+                    "phases": [{"tasks": [{"verification_commands": ["python -m pytest -q"]}]}]
+                },
             },
         },
     )
@@ -623,7 +681,9 @@ def test_search_context_ranks_across_surfaces(monkeypatch, tmp_path):
             }
         ],
     )
-    monkeypatch.setattr(coding_tools, "_children_snapshot", lambda *_args, **_kwargs: {"children": []})
+    monkeypatch.setattr(
+        coding_tools, "_children_snapshot", lambda *_args, **_kwargs: {"children": []}
+    )
     monkeypatch.setattr(coding_tools, "_recent_context_hits", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
         coding_tools,
@@ -645,15 +705,24 @@ def test_search_context_ranks_across_surfaces(monkeypatch, tmp_path):
 def test_search_context_surfaces_roadmap_notes_and_plans_docs(monkeypatch, tmp_path):
     root = tmp_path
     (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
-    (root / "TLDROADMAP.md").write_text("# TLDROADMAP\n\n## North Star\n\nAudit is the next strategic capability.\n", encoding="utf-8")
-    (root / "TLDRNOTES.md").write_text("# Notes\n\nAudit caveat: keep it local-first.\n", encoding="utf-8")
+    (root / "TLDROADMAP.md").write_text(
+        "# TLDROADMAP\n\n## North Star\n\nAudit is the next strategic capability.\n",
+        encoding="utf-8",
+    )
+    (root / "TLDRNOTES.md").write_text(
+        "# Notes\n\nAudit caveat: keep it local-first.\n", encoding="utf-8"
+    )
     plans_path = root / ".tldr" / "roadmap" / "TLDRPLANS.md"
     plans_path.parent.mkdir(parents=True)
-    plans_path.write_text("# TLDRPLANS\n\n## Grounded Next Goals\n\nAdd local audit coverage.\n", encoding="utf-8")
+    plans_path.write_text(
+        "# TLDRPLANS\n\n## Grounded Next Goals\n\nAdd local audit coverage.\n", encoding="utf-8"
+    )
 
     monkeypatch.setattr(coding_tools, "_code_context_hits", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(coding_tools, "_workboard_context_hits", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(coding_tools, "_children_snapshot", lambda *_args, **_kwargs: {"children": []})
+    monkeypatch.setattr(
+        coding_tools, "_children_snapshot", lambda *_args, **_kwargs: {"children": []}
+    )
     monkeypatch.setattr(coding_tools, "_recent_context_hits", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(coding_tools, "test_map", lambda **_kwargs: {"verification_commands": []})
 
@@ -707,14 +776,37 @@ def test_repo_next_action_prioritizes_overlap(monkeypatch, tmp_path):
         "_workboard_snapshot",
         lambda _root: {
             "current": {
-                "session": {"current_plan_id": "plan-1", "current_task_id": "task-1", "next_action": "Run verification"},
+                "session": {
+                    "current_plan_id": "plan-1",
+                    "current_task_id": "task-1",
+                    "next_action": "Run verification",
+                },
                 "plan": {
                     "id": "plan-1",
                     "title": "Parser cleanup",
                     "goal": "Stabilize parser behavior",
-                    "phases": [{"name": "Build", "tasks": [{"id": "task-1", "title": "Patch parser", "status": "in_progress", "verification_commands": ["python -m pytest -q"]}]}],
+                    "phases": [
+                        {
+                            "name": "Build",
+                            "tasks": [
+                                {
+                                    "id": "task-1",
+                                    "title": "Patch parser",
+                                    "status": "in_progress",
+                                    "verification_commands": ["python -m pytest -q"],
+                                }
+                            ],
+                        }
+                    ],
                 },
-                "overlaps": [{"session_id": "codex-2", "actor_id": "codex", "shared_files": ["tldreadme/parser.py"], "shared_symbols": ["parse_file"]}],
+                "overlaps": [
+                    {
+                        "session_id": "codex-2",
+                        "actor_id": "codex",
+                        "shared_files": ["tldreadme/parser.py"],
+                        "shared_symbols": ["parse_file"],
+                    }
+                ],
             }
         },
     )
@@ -738,7 +830,13 @@ def test_repo_next_action_prioritizes_unknown_child_when_no_overlap(monkeypatch,
         "_children_snapshot",
         lambda _root: {
             "children": [
-                {"path": "redocoder", "status": "unknown", "manifests": ["package.json"], "context_docs": ["README.md"], "note": None}
+                {
+                    "path": "redocoder",
+                    "status": "unknown",
+                    "manifests": ["package.json"],
+                    "context_docs": ["README.md"],
+                    "note": None,
+                }
             ]
         },
     )

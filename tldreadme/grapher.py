@@ -1,9 +1,8 @@
 """FalkorDB graph builder - call graphs, imports, data flow, patterns."""
 
-from .parser import ParseResult, Symbol, Import, CallSite
+from .config import get_setting
 from .lazy import load_attr
-import os
-
+from .parser import ParseResult
 
 GRAPH_NAME = "tldreadme"
 
@@ -12,7 +11,7 @@ class CodeGrapher:
     """Builds and queries the code knowledge graph in FalkorDB."""
 
     def __init__(self, url: str = None):
-        url = url or os.getenv("FALKORDB_URL", "redis://localhost:6379")
+        url = url or get_setting("FALKORDB_URL")
         self.db = load_attr("falkordb", "FalkorDB")(url=url)
         self.graph = self.db.select_graph(GRAPH_NAME)
         self._ensure_schema()
@@ -55,9 +54,14 @@ class CodeGrapher:
                     "SET s.kind = $kind, s.language = $lang, s.signature = $sig, "
                     "s.end_line = $end_line, s.parent = $parent",
                     {
-                        "name": sym.name, "file": sym.file, "line": sym.line,
-                        "kind": sym.kind, "lang": sym.language, "sig": sym.signature,
-                        "end_line": sym.end_line, "parent": sym.parent,
+                        "name": sym.name,
+                        "file": sym.file,
+                        "line": sym.line,
+                        "kind": sym.kind,
+                        "lang": sym.language,
+                        "sig": sym.signature,
+                        "end_line": sym.end_line,
+                        "parent": sym.parent,
                     },
                 )
                 # Link symbol to file
@@ -75,8 +79,10 @@ class CodeGrapher:
                     "MATCH (callee:Symbol {name: $callee}) "
                     "MERGE (caller)-[:CALLS {line: $line}]->(callee)",
                     {
-                        "caller": call.caller, "callee": call.callee,
-                        "file": call.file, "line": call.line,
+                        "caller": call.caller,
+                        "callee": call.callee,
+                        "file": call.file,
+                        "line": call.line,
                     },
                 )
 
@@ -117,13 +123,17 @@ class CodeGrapher:
             "ORDER BY f.path, s.line",
             {"path": module_path},
         )
-        return [{"name": r[0], "kind": r[1], "signature": r[2], "file": r[3], "line": r[4]}
-                for r in result.result_set]
+        return [
+            {"name": r[0], "kind": r[1], "signature": r[2], "file": r[3], "line": r[4]}
+            for r in result.result_set
+        ]
 
     def get_flow(self, entry_symbol: str, max_depth: int = 5) -> list[dict]:
         """Trace call flow from an entry point, up to max_depth."""
         result = self.graph.query(
-            "MATCH path = (s:Symbol {name: $name})-[:CALLS*1.." + str(max_depth) + "]->(target:Symbol) "
+            "MATCH path = (s:Symbol {name: $name})-[:CALLS*1.."
+            + str(max_depth)
+            + "]->(target:Symbol) "
             "RETURN [n IN nodes(path) | {name: n.name, file: n.file, kind: n.kind}]",
             {"name": entry_symbol},
         )

@@ -2,13 +2,23 @@
 
 import json
 
+from mcp.types import Tool
+
 from tldreadme import mcp_server
 
 from .bedrock import bedrock_case
 
 
 def test_read_health_resource(monkeypatch):
-    runtime = type("Runtime", (), {"runtime_report": staticmethod(lambda: {"ok": True, "checks": [{"name": "python", "status": "ok"}]})})()
+    runtime = type(
+        "Runtime",
+        (),
+        {
+            "runtime_report": staticmethod(
+                lambda: {"ok": True, "checks": [{"name": "python", "status": "ok"}]}
+            )
+        },
+    )()
     monkeypatch.setattr(mcp_server, "_runtime", lambda: runtime)
 
     payload = json.loads(mcp_server._read_resource_text("repo://health"))
@@ -29,13 +39,49 @@ def test_read_health_resource(monkeypatch):
     reliance_percent=99.3,
 )
 def test_read_tooling_resource_uses_router_profile(monkeypatch):
-    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": True, "vector": False, "graph": False, "llm": False, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
-    monkeypatch.setattr(mcp_server, "_routing_signals", lambda: {"has_current_plan": False, "has_current_task": False, "has_next_action": False, "has_overlaps": False, "unknown_children": 0})
-    payload = json.loads(mcp_server._read_resource_text("repo://tooling", capabilities=capabilities))
+    capabilities = {
+        "report_ok": True,
+        "backends": {
+            "rg": True,
+            "lsp": True,
+            "vector": False,
+            "graph": False,
+            "llm": False,
+            "git": True,
+            "filesystem": True,
+            "docs": True,
+            "summary": True,
+            "workboard": True,
+            "children": True,
+            "tests": True,
+            "subprocess": True,
+            "hot_index": True,
+            "asts": True,
+        },
+    }
+    monkeypatch.setattr(
+        mcp_server,
+        "_routing_signals",
+        lambda: {
+            "has_current_plan": False,
+            "has_current_task": False,
+            "has_next_action": False,
+            "has_overlaps": False,
+            "unknown_children": 0,
+        },
+    )
+    payload = json.loads(
+        mcp_server._read_resource_text("repo://tooling", capabilities=capabilities)
+    )
 
     assert payload["active_profile"] == "router"
     assert payload["router_contract_version"] == 1
-    assert payload["router_contract_tools"] == ["repo_next_action", "repo_lookup", "change_plan", "verify_change"]
+    assert payload["router_contract_tools"] == [
+        "repo_next_action",
+        "repo_lookup",
+        "change_plan",
+        "verify_change",
+    ]
     assert [tool["name"] for tool in payload["exposed_tools"]] == [
         "repo_lookup",
         "repo_next_action",
@@ -47,7 +93,26 @@ def test_read_tooling_resource_uses_router_profile(monkeypatch):
 
 
 def test_router_profile_exposes_smaller_tool_set():
-    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": True, "vector": False, "graph": False, "llm": False, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
+    capabilities = {
+        "report_ok": True,
+        "backends": {
+            "rg": True,
+            "lsp": True,
+            "vector": False,
+            "graph": False,
+            "llm": False,
+            "git": True,
+            "filesystem": True,
+            "docs": True,
+            "summary": True,
+            "workboard": True,
+            "children": True,
+            "tests": True,
+            "subprocess": True,
+            "hot_index": True,
+            "asts": True,
+        },
+    }
     router_tools = mcp_server._tool_names_for_profile("router", capabilities=capabilities)
     full_tools = mcp_server._tool_names_for_profile("full", capabilities=capabilities)
 
@@ -56,7 +121,99 @@ def test_router_profile_exposes_smaller_tool_set():
     assert "repo_lookup" in router_tools
     assert "scan_context" not in router_tools
     assert "read_symbol" not in router_tools
+    assert "history_search" not in router_tools
+    assert "history_search" in full_tools
     assert len(router_tools) < len(full_tools)
+
+
+def test_history_search_catalog_requires_git_and_ripgrep():
+    metadata = mcp_server.TOOL_METADATA["history_search"]
+
+    assert metadata["profiles"] == ["full"]
+    assert metadata["backends"] == ["git", "rg"]
+    assert metadata["read_only"] is True
+    assert mcp_server.TOOL_REQUIRED_BACKENDS["history_search"] == ["git", "rg"]
+
+
+def test_tool_annotations_follow_catalog_safety_metadata():
+    tools = [
+        Tool(name="repo_lookup", description="Lookup", inputSchema={"type": "object"}),
+        Tool(
+            name="audit_kev_refresh",
+            description="Refresh",
+            inputSchema={"type": "object"},
+        ),
+    ]
+
+    annotated = mcp_server._annotate_tools(tools)
+
+    assert annotated[0].annotations.readOnlyHint is True
+    assert annotated[0].annotations.idempotentHint is True
+    assert annotated[0].annotations.openWorldHint is False
+    assert annotated[1].annotations.readOnlyHint is False
+    assert annotated[1].annotations.destructiveHint is False
+    assert annotated[1].annotations.openWorldHint is True
+
+
+def test_setup_required_replaces_normal_tool_surface():
+    capabilities = {
+        "report_ok": True,
+        "configuration": {
+            "configured": False,
+            "status": "setup_required",
+            "reason": "Must run Configuration - Setup first.",
+        },
+        "backends": {"filesystem": True},
+    }
+
+    assert mcp_server._tool_names_for_profile(
+        "router",
+        capabilities=capabilities,
+    ) == ["configuration_setup"]
+    assert mcp_server._tool_names_for_profile(
+        "full",
+        capabilities=capabilities,
+    ) == ["configuration_setup"]
+
+
+def test_missing_model_suppresses_llm_tools_with_reason(monkeypatch):
+    capabilities = {
+        "report_ok": True,
+        "configuration": {"configured": True, "status": "ready"},
+        "backends": {
+            "rg": True,
+            "vector": True,
+            "embedding": True,
+            "graph": True,
+            "llm": False,
+            "filesystem": True,
+        },
+        "backend_details": {
+            "llm": {
+                "status": "missing",
+                "model": "qwen",
+                "reason": "Run ollama pull qwen.",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        mcp_server,
+        "_routing_signals",
+        lambda: {
+            "has_current_plan": False,
+            "has_current_task": False,
+            "has_next_action": False,
+            "has_overlaps": False,
+            "unknown_children": 0,
+        },
+    )
+
+    payload = mcp_server._tooling_payload("full", capabilities=capabilities)
+
+    suppressed = {tool["name"]: tool for tool in payload["suppressed_tools"]}
+    assert "tldr" in suppressed
+    assert "explain" in suppressed
+    assert mcp_server._missing_backend_details("tldr", capabilities)["llm"]["status"] == "missing"
 
 
 @bedrock_case(
@@ -71,7 +228,26 @@ def test_router_profile_exposes_smaller_tool_set():
     reliance_percent=98.9,
 )
 def test_capability_enforcement_suppresses_lsp_tools():
-    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": False, "vector": True, "graph": True, "llm": True, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
+    capabilities = {
+        "report_ok": True,
+        "backends": {
+            "rg": True,
+            "lsp": False,
+            "vector": True,
+            "graph": True,
+            "llm": True,
+            "git": True,
+            "filesystem": True,
+            "docs": True,
+            "summary": True,
+            "workboard": True,
+            "children": True,
+            "tests": True,
+            "subprocess": True,
+            "hot_index": True,
+            "asts": True,
+        },
+    }
 
     router_tools = mcp_server._tool_names_for_profile("router", capabilities=capabilities)
     full_tools = mcp_server._tool_names_for_profile("full", capabilities=capabilities)
@@ -82,7 +258,26 @@ def test_capability_enforcement_suppresses_lsp_tools():
 
 
 def test_grounded_planning_tools_remain_available_without_llm():
-    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": False, "vector": False, "graph": False, "llm": False, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
+    capabilities = {
+        "report_ok": True,
+        "backends": {
+            "rg": True,
+            "lsp": False,
+            "vector": False,
+            "graph": False,
+            "llm": False,
+            "git": True,
+            "filesystem": True,
+            "docs": True,
+            "summary": True,
+            "workboard": True,
+            "children": True,
+            "tests": True,
+            "subprocess": True,
+            "hot_index": True,
+            "asts": True,
+        },
+    }
 
     full_tools = mcp_server._tool_names_for_profile("full", capabilities=capabilities)
 
@@ -96,7 +291,26 @@ def test_grounded_planning_tools_remain_available_without_llm():
 
 
 def test_full_profile_exposes_security_audit_tools_but_router_does_not():
-    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": False, "vector": False, "graph": False, "llm": False, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
+    capabilities = {
+        "report_ok": True,
+        "backends": {
+            "rg": True,
+            "lsp": False,
+            "vector": False,
+            "graph": False,
+            "llm": False,
+            "git": True,
+            "filesystem": True,
+            "docs": True,
+            "summary": True,
+            "workboard": True,
+            "children": True,
+            "tests": True,
+            "subprocess": True,
+            "hot_index": True,
+            "asts": True,
+        },
+    }
 
     router_tools = mcp_server._tool_names_for_profile("router", capabilities=capabilities)
     full_tools = mcp_server._tool_names_for_profile("full", capabilities=capabilities)
@@ -110,8 +324,37 @@ def test_full_profile_exposes_security_audit_tools_but_router_does_not():
 
 
 def test_tooling_payload_prioritizes_repo_next_action_when_overlap_exists(monkeypatch):
-    capabilities = {"report_ok": True, "backends": {"rg": True, "lsp": True, "vector": True, "graph": True, "llm": True, "git": True, "filesystem": True, "docs": True, "summary": True, "workboard": True, "children": True, "tests": True, "subprocess": True, "hot_index": True, "asts": True}}
-    monkeypatch.setattr(mcp_server, "_routing_signals", lambda: {"has_current_plan": True, "has_current_task": True, "has_next_action": True, "has_overlaps": True, "unknown_children": 0})
+    capabilities = {
+        "report_ok": True,
+        "backends": {
+            "rg": True,
+            "lsp": True,
+            "vector": True,
+            "graph": True,
+            "llm": True,
+            "git": True,
+            "filesystem": True,
+            "docs": True,
+            "summary": True,
+            "workboard": True,
+            "children": True,
+            "tests": True,
+            "subprocess": True,
+            "hot_index": True,
+            "asts": True,
+        },
+    }
+    monkeypatch.setattr(
+        mcp_server,
+        "_routing_signals",
+        lambda: {
+            "has_current_plan": True,
+            "has_current_task": True,
+            "has_next_action": True,
+            "has_overlaps": True,
+            "unknown_children": 0,
+        },
+    )
 
     payload = mcp_server._tooling_payload("router", capabilities=capabilities)
 
@@ -120,7 +363,9 @@ def test_tooling_payload_prioritizes_repo_next_action_when_overlap_exists(monkey
 
 
 def test_read_module_resource(monkeypatch):
-    rag = type("Rag", (), {"read_module": staticmethod(lambda path: {"module": path, "symbol_count": 2})})()
+    rag = type(
+        "Rag", (), {"read_module": staticmethod(lambda path: {"module": path, "symbol_count": 2})}
+    )()
     monkeypatch.setattr(mcp_server, "_rag", lambda: rag)
 
     payload = json.loads(mcp_server._read_resource_text("repo://module/src/core"))
@@ -130,7 +375,15 @@ def test_read_module_resource(monkeypatch):
 
 
 def test_read_plans_resource(monkeypatch):
-    workboard = type("Workboard", (), {"list_plans": staticmethod(lambda: {"count": 1, "plans": [{"id": "plan-1", "title": "Example"}]})})()
+    workboard = type(
+        "Workboard",
+        (),
+        {
+            "list_plans": staticmethod(
+                lambda: {"count": 1, "plans": [{"id": "plan-1", "title": "Example"}]}
+            )
+        },
+    )()
     monkeypatch.setattr(mcp_server, "_workboard", lambda: workboard)
 
     payload = json.loads(mcp_server._read_resource_text("repo://plans"))
@@ -144,9 +397,24 @@ def test_read_roadmap_notes_and_plans_digest_resources(monkeypatch):
         "Roadmap",
         (),
         {
-            "read_roadmap": staticmethod(lambda: {"path": "TLDROADMAP.md", "exists": True, "human_owned": "## North Star", "auto_generated": "## Current Status"}),
-            "read_notes": staticmethod(lambda: {"path": "TLDRNOTES.md", "exists": True, "content": "# Notes"}),
-            "read_plans_digest": staticmethod(lambda: {"path": ".tldr/roadmap/TLDRPLANS.md", "exists": True, "content": "# TLDRPLANS"}),
+            "read_roadmap": staticmethod(
+                lambda: {
+                    "path": "TLDROADMAP.md",
+                    "exists": True,
+                    "human_owned": "## North Star",
+                    "auto_generated": "## Current Status",
+                }
+            ),
+            "read_notes": staticmethod(
+                lambda: {"path": "TLDRNOTES.md", "exists": True, "content": "# Notes"}
+            ),
+            "read_plans_digest": staticmethod(
+                lambda: {
+                    "path": ".tldr/roadmap/TLDRPLANS.md",
+                    "exists": True,
+                    "content": "# TLDRPLANS",
+                }
+            ),
         },
     )()
     monkeypatch.setattr(mcp_server, "_roadmap", lambda: roadmap)
@@ -195,7 +463,9 @@ def test_read_current_session_resource(monkeypatch):
                     "plan": {"id": "plan-1"},
                     "summary": {"id": "plan-1"},
                     "active_sessions": [{"session_id": "codex-456", "relation": "same_workspace"}],
-                    "overlaps": [{"session_id": "codex-456", "shared_files": ["tldreadme/parser.py"]}],
+                    "overlaps": [
+                        {"session_id": "codex-456", "shared_files": ["tldreadme/parser.py"]}
+                    ],
                 }
             )
         },
@@ -209,7 +479,18 @@ def test_read_current_session_resource(monkeypatch):
 
 
 def test_read_children_resource(monkeypatch):
-    children = type("Children", (), {"list_children": staticmethod(lambda include_ignored=True: {"count": 1, "children": [{"path": "redocoder", "status": "unknown"}]})})()
+    children = type(
+        "Children",
+        (),
+        {
+            "list_children": staticmethod(
+                lambda include_ignored=True: {
+                    "count": 1,
+                    "children": [{"path": "redocoder", "status": "unknown"}],
+                }
+            )
+        },
+    )()
     monkeypatch.setattr(mcp_server, "_children", lambda: children)
 
     payload = json.loads(mcp_server._read_resource_text("repo://children"))
@@ -222,7 +503,11 @@ def test_read_task_resource(monkeypatch):
     workboard = type(
         "Workboard",
         (),
-        {"get_task": staticmethod(lambda plan_id, task_id: {"plan_id": plan_id, "id": task_id, "title": "Write tests"})},
+        {
+            "get_task": staticmethod(
+                lambda plan_id, task_id: {"plan_id": plan_id, "id": task_id, "title": "Write tests"}
+            )
+        },
     )()
     monkeypatch.setattr(mcp_server, "_workboard", lambda: workboard)
 
@@ -278,7 +563,9 @@ def test_build_resume_session_prompt(monkeypatch):
     monkeypatch.setattr(
         mcp_server,
         "_read_resource_text",
-        lambda uri, tool_profile="router": '{"id":"plan-1"}' if uri.startswith("repo://plan/") else '{"session":true}',
+        lambda uri, tool_profile="router": (
+            '{"id":"plan-1"}' if uri.startswith("repo://plan/") else '{"session":true}'
+        ),
     )
 
     prompt = mcp_server._build_prompt("resume-session", {})
@@ -298,4 +585,6 @@ def test_build_done_check_prompt(monkeypatch):
     prompt = mcp_server._build_prompt("done-check", {"plan_id": "plan-1", "task_id": "task-1"})
 
     assert prompt.description
-    assert prompt.messages[1].content.resource.text == '{"id":"task-1","acceptance_criteria":["done"]}'
+    assert (
+        prompt.messages[1].content.resource.text == '{"id":"task-1","acceptance_criteria":["done"]}'
+    )

@@ -1,8 +1,9 @@
 """Tests for CLI entry points."""
 
 from click.testing import CliRunner
-from tldreadme.cli import main
+
 from tldreadme import cli
+from tldreadme.cli import main
 
 
 def test_cli_help():
@@ -189,7 +190,14 @@ def test_cli_audit_save_report_in_json_output(monkeypatch, tmp_path):
 def test_cli_audit_profiles(monkeypatch):
     monkeypatch.setattr(
         "tldreadme.audit.list_policy_profiles",
-        lambda: [{"id": "owasp-mcp", "description": "profile", "recommended_categories": ["code"], "focus_areas": ["tools"]}],
+        lambda: [
+            {
+                "id": "owasp-mcp",
+                "description": "profile",
+                "recommended_categories": ["code"],
+                "focus_areas": ["tools"],
+            }
+        ],
     )
     monkeypatch.setattr(
         "tldreadme.audit.render_policy_profiles",
@@ -230,6 +238,51 @@ def test_cli_doctor_runs():
     assert "doctor --fix" in result.output
 
 
+def test_cli_setup_writes_local_only_configuration(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    monkeypatch.setenv("TLDREADME_CONFIG_PATH", str(config_path))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["setup", "--provider", "ollama", "--tool-profile", "full"],
+    )
+
+    assert result.exit_code == 0
+    assert "Configuration complete: ollama" in result.output
+    assert "MCP tool profile: full" in result.output
+    assert "Cloud code-level inference: not allowed" in result.output
+    assert config_path.exists()
+
+    repeat_result = runner.invoke(main, ["setup", "--provider", "ollama"])
+    assert repeat_result.exit_code == 0
+    assert "MCP tool profile: full" in repeat_result.output
+
+    check_result = runner.invoke(main, ["setup", "--check"])
+    assert check_result.exit_code == 0
+    assert "completed for provider `ollama`" in check_result.output
+
+
+def test_cli_setup_rejects_unacknowledged_cloud_code(monkeypatch, tmp_path):
+    monkeypatch.setenv("TLDREADME_CONFIG_PATH", str(tmp_path / "config.json"))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "setup",
+            "--provider",
+            "ollama",
+            "--allow-cloud-code",
+            "--cloud-subscription",
+            "codex",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "explicit acknowledgement" in result.output
+
+
 def test_cli_doctor_diagnostics(monkeypatch, tmp_path):
     source = tmp_path / "sample.py"
     source.write_text("def sample():\n    return 1\n")
@@ -255,7 +308,9 @@ def test_cli_doctor_diagnostics(monkeypatch, tmp_path):
         "tldreadme.coding_tools.diagnostics_here",
         lambda *_args, **_kwargs: {
             "path": str(source),
-            "diagnostics": [{"path": str(source), "line": 1, "severity": "warning", "message": "possible issue"}],
+            "diagnostics": [
+                {"path": str(source), "line": 1, "severity": "warning", "message": "possible issue"}
+            ],
             "likely_fix_area": {"path": str(source), "line": 1, "severity": "warning"},
             "impacted_symbols": ["sample"],
             "verification_commands": ["python -m pytest -q tests/test_sample.py"],
@@ -289,7 +344,10 @@ def test_cli_doctor_fix_prints_install_options(monkeypatch):
                     "category": "lsp",
                     "required": False,
                     "install_options": [
-                        {"label": "Install basedpyright via npm", "command": "npm install -g basedpyright"},
+                        {
+                            "label": "Install basedpyright via npm",
+                            "command": "npm install -g basedpyright",
+                        },
                     ],
                 }
             ],
@@ -378,7 +436,7 @@ def test_cli_lsp_symbols_invokes_workspace_query(monkeypatch, tmp_path):
     result = runner.invoke(main, ["lsp-symbols", str(source), "sample"])
 
     assert result.exit_code == 0
-    assert "\"name\": \"sample\"" in result.output
+    assert '"name": "sample"' in result.output
 
 
 def test_cli_summary_renders_report(monkeypatch, tmp_path):
@@ -431,7 +489,9 @@ def test_cli_whats_next_renders_report(monkeypatch, tmp_path):
             "project_intent": "Turn context into action.",
             "completion": {"percent": 50.0, "tasks_done": 1, "tasks_total": 2, "plan_count": 1},
             "current_plan": {"title": "Audit", "status": "in_progress"},
-            "current_code_status": {"source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}},
+            "current_code_status": {
+                "source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}
+            },
             "strategic_question": "What is the most strategic next question?",
             "top_goal": "Add audit",
             "next_options": [],
@@ -462,7 +522,9 @@ def test_cli_current_roadmap_writes_report(monkeypatch, tmp_path):
             "project_intent": "Turn context into action.",
             "completion": {"percent": 50.0, "tasks_done": 1, "tasks_total": 2, "plan_count": 1},
             "current_plan": {"title": "Audit", "status": "in_progress"},
-            "current_code_status": {"source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}},
+            "current_code_status": {
+                "source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}
+            },
             "top_goal": "Add audit",
             "next_options": [],
             "recommended_next_action": "Use repo_lookup first.",
@@ -491,7 +553,9 @@ def test_cli_legacy_roadmap_aliases_still_work(monkeypatch, tmp_path):
             "project_intent": "Turn context into action.",
             "completion": {"percent": 50.0, "tasks_done": 1, "tasks_total": 2, "plan_count": 1},
             "current_plan": {"title": "Audit", "status": "in_progress"},
-            "current_code_status": {"source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}},
+            "current_code_status": {
+                "source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}
+            },
             "strategic_question": "What is the most strategic next question?",
             "top_goal": "Add audit",
             "next_options": [],
@@ -513,7 +577,9 @@ def test_cli_legacy_roadmap_aliases_still_work(monkeypatch, tmp_path):
             "project_intent": "Turn context into action.",
             "completion": {"percent": 50.0, "tasks_done": 1, "tasks_total": 2, "plan_count": 1},
             "current_plan": {"title": "Audit", "status": "in_progress"},
-            "current_code_status": {"source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}},
+            "current_code_status": {
+                "source_counts": {"code": 10, "tests": 4, "docs": 2, "workboard": 1}
+            },
             "top_goal": "Add audit",
             "next_options": [],
             "recommended_next_action": "Use repo_lookup first.",
@@ -579,7 +645,18 @@ def test_cli_children_merge_marks_child(monkeypatch, tmp_path):
     )
 
     runner = CliRunner()
-    result = runner.invoke(main, ["children", "merge", "redocoder", "--root", str(tmp_path), "--note", "Imported intentionally"])
+    result = runner.invoke(
+        main,
+        [
+            "children",
+            "merge",
+            "redocoder",
+            "--root",
+            str(tmp_path),
+            "--note",
+            "Imported intentionally",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "MERGED: redocoder" in result.output

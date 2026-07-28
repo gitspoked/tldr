@@ -1,12 +1,12 @@
 """Detection and acknowledgment for nested child projects."""
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
-import os
 
-from pydantic import BaseModel, Field
 import yaml
+from pydantic import BaseModel, Field
 
 WORK_ROOT = Path(".tldr/work")
 CHILDREN_FILE = Path(".tldr/work/children.yaml")
@@ -15,7 +15,18 @@ CHILDREN_DOCUMENT_TYPE = "tldreadme/children_registry"
 
 ChildStatus = Literal["unknown", "merged", "ignored"]
 
-IGNORED_CHILD_PARTS = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr", ".claude"}
+IGNORED_CHILD_PARTS = {
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "target",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".tldr",
+    ".claude",
+}
 MANIFEST_FILES = {
     "Cargo.toml",
     "go.mod",
@@ -240,8 +251,15 @@ def _detect_children(root: str | Path | None = None) -> list[dict]:
             candidates.append((current, inspected))
 
     selected: list[tuple[Path, dict]] = []
-    for current, payload in sorted(candidates, key=lambda item: (len(item[0].relative_to(repo_root).parts), str(item[0]))):
-        if any(parent == existing for parent in current.parents for existing, _meta in selected if parent != repo_root):
+    for current, payload in sorted(
+        candidates, key=lambda item: (len(item[0].relative_to(repo_root).parts), str(item[0]))
+    ):
+        if any(
+            parent == existing
+            for parent in current.parents
+            for existing, _meta in selected
+            if parent != repo_root
+        ):
             continue
         selected.append((current, payload))
 
@@ -418,13 +436,17 @@ def _set_child_status(
     return _child_payload(child)
 
 
-def merge_child(path: str | Path, *, root: str | Path | None = None, note: str | None = None) -> dict:
+def merge_child(
+    path: str | Path, *, root: str | Path | None = None, note: str | None = None
+) -> dict:
     """Mark a child subtree as intentionally merged into the repository."""
 
     return _set_child_status(path, status="merged", root=root, note=note)
 
 
-def ignore_child(path: str | Path, *, root: str | Path | None = None, note: str | None = None) -> dict:
+def ignore_child(
+    path: str | Path, *, root: str | Path | None = None, note: str | None = None
+) -> dict:
     """Mark a child subtree as intentionally ignored."""
 
     return _set_child_status(path, status="ignored", root=root, note=note)

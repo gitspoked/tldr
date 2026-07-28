@@ -36,18 +36,22 @@ def test_run_audit_prefers_first_available_scanner(monkeypatch, tmp_path):
     monkeypatch.setitem(
         audit.RUNNERS,
         "pip-audit",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("fallback runner should not execute")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("fallback runner should not execute")
+        ),
     )
     monkeypatch.setattr(
         audit,
         "_run_osv_with_options",
-        lambda root, *, dry_run, install_options, offline=False, download_offline_db=False: audit._base_result(
-            "OSV-Scanner",
-            "ok",
-            f"scanned {root}",
-            command=["osv-scanner", "scan"],
-            findings=[],
-            install_options=install_options,
+        lambda root, *, dry_run, install_options, offline=False, download_offline_db=False: (
+            audit._base_result(
+                "OSV-Scanner",
+                "ok",
+                f"scanned {root}",
+                command=["osv-scanner", "scan"],
+                findings=[],
+                install_options=install_options,
+            )
         ),
     )
 
@@ -69,7 +73,9 @@ def test_run_audit_marks_missing_required_scanner_not_ok(monkeypatch, tmp_path):
                 "osv-scanner",
                 status="warn",
                 details="missing",
-                install_options=[{"label": "Install OSV-Scanner", "command": "brew install osv-scanner"}],
+                install_options=[
+                    {"label": "Install OSV-Scanner", "command": "brew install osv-scanner"}
+                ],
             ),
             _audit_check("pip-audit", "pip-audit", status="warn", details="missing"),
         ],
@@ -136,25 +142,29 @@ def test_run_audit_annotates_known_exploited_findings(monkeypatch, tmp_path):
     monkeypatch.setitem(
         audit.RUNNERS,
         "pip-audit",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("fallback runner should not execute")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("fallback runner should not execute")
+        ),
     )
     monkeypatch.setattr(
         audit,
         "_run_osv_with_options",
-        lambda root, *, dry_run, install_options, offline=False, download_offline_db=False: audit._base_result(
-            "OSV-Scanner",
-            "warn",
-            f"scanned {root}",
-            command=["osv-scanner", "scan"],
-            findings=[
-                {
-                    "id": "CVE-2024-9999",
-                    "title": "Known issue",
-                    "severity": "medium",
-                    "aliases": [],
-                }
-            ],
-            install_options=install_options,
+        lambda root, *, dry_run, install_options, offline=False, download_offline_db=False: (
+            audit._base_result(
+                "OSV-Scanner",
+                "warn",
+                f"scanned {root}",
+                command=["osv-scanner", "scan"],
+                findings=[
+                    {
+                        "id": "CVE-2024-9999",
+                        "title": "Known issue",
+                        "severity": "medium",
+                        "aliases": [],
+                    }
+                ],
+                install_options=install_options,
+            )
         ),
     )
 
@@ -203,7 +213,9 @@ def test_run_audit_can_prefer_snyk(monkeypatch, tmp_path):
     monkeypatch.setattr(
         audit,
         "_run_osv_with_options",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("local scanner should not execute when Snyk is preferred")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("local scanner should not execute when Snyk is preferred")
+        ),
     )
     monkeypatch.setitem(
         audit.RUNNERS,
@@ -237,7 +249,9 @@ def test_refresh_kev_catalog_writes_json(monkeypatch, tmp_path):
 
     monkeypatch.setattr(audit, "urlopen", lambda *_args, **_kwargs: FakeResponse())
 
-    result = audit.refresh_kev_catalog(output_path=str(tmp_path / "kev.json"), url="https://example.com/kev.json")
+    result = audit.refresh_kev_catalog(
+        output_path=str(tmp_path / "kev.json"), url="https://example.com/kev.json"
+    )
 
     assert result["count"] == 1
     assert Path(result["path"]).exists()
@@ -253,7 +267,16 @@ def test_save_and_read_security_state(tmp_path):
     report = {
         "category": "deps",
         "root": str(tmp_path),
-        "summary": {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "unknown": 0, "kev": 0, "total": 0},
+        "summary": {
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "info": 0,
+            "unknown": 0,
+            "kev": 0,
+            "total": 0,
+        },
         "status": "ok",
         "ok": True,
     }

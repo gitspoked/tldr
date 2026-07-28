@@ -1,12 +1,12 @@
 """Tree-sitter AST parsing for symbols, imports, and call sites."""
 
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
 import json
 import subprocess
 import sys
 import warnings
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 from .runtime import get_tree_sitter_languages
 
@@ -147,7 +147,7 @@ def _parse_file_inprocess(path: Path) -> ParseResult | None:
 # Subprocess wrapper - parses a batch of files (one per line on stdin) and
 # writes one JSON object per line to stdout.  If the C grammar crashes,
 # the whole batch dies - the caller retries the batch file-by-file.
-_PARSE_BATCH_SCRIPT = '''
+_PARSE_BATCH_SCRIPT = """
 import json, sys
 from pathlib import Path
 sys.path.insert(0, {pkg_parent!r})
@@ -183,7 +183,7 @@ for line in sys.stdin:
     if result is not None and result.symbols:
         sys.stdout.write(json.dumps(_serialize(result)) + "\\n")
         sys.stdout.flush()
-'''
+"""
 
 
 def _result_from_json(data: dict, raw_source: str) -> ParseResult:
@@ -194,9 +194,15 @@ def _result_from_json(data: dict, raw_source: str) -> ParseResult:
         language=data["language"],
         symbols=[
             Symbol(
-                name=s["name"], kind=s["kind"], file=s["file"], line=s["line"],
-                end_line=s["end_line"], body=s["body"], signature=s["signature"],
-                docstring=s.get("docstring"), parent=s.get("parent"),
+                name=s["name"],
+                kind=s["kind"],
+                file=s["file"],
+                line=s["line"],
+                end_line=s["end_line"],
+                body=s["body"],
+                signature=s["signature"],
+                docstring=s.get("docstring"),
+                parent=s.get("parent"),
                 language=s.get("language", ""),
             )
             for s in data["symbols"]
@@ -207,8 +213,11 @@ def _result_from_json(data: dict, raw_source: str) -> ParseResult:
         ],
         calls=[
             CallSite(
-                caller=c["caller"], callee=c["callee"], file=c["file"],
-                line=c["line"], arguments=c.get("arguments", []),
+                caller=c["caller"],
+                callee=c["callee"],
+                file=c["file"],
+                line=c["line"],
+                arguments=c.get("arguments", []),
             )
             for c in data["calls"]
         ],
@@ -308,7 +317,18 @@ def parse_directory(
     """
 
     if exclude is None:
-        exclude = {"node_modules", ".git", "__pycache__", "target", ".venv", "venv", "dist", "build", ".tldr", ".claude"}
+        exclude = {
+            "node_modules",
+            ".git",
+            "__pycache__",
+            "target",
+            ".venv",
+            "venv",
+            "dist",
+            "build",
+            ".tldr",
+            ".claude",
+        }
 
     # Collect candidate files
     candidates = []
@@ -345,7 +365,10 @@ def parse_directory(
         # Progress indicator
         done = min(i + _BATCH_SIZE, len(candidates))
         if done % 500 == 0 or done == len(candidates):
-            print(f"  parsed {done}/{len(candidates)} files ({len(results)} with symbols)", file=sys.stderr)
+            print(
+                f"  parsed {done}/{len(candidates)} files ({len(results)} with symbols)",
+                file=sys.stderr,
+            )
 
     if skipped:
         print(f"WARN: {skipped} file(s) skipped due to parser crashes", file=sys.stderr)
@@ -500,7 +523,11 @@ def _extract_symbols(node, source: str, source_bytes: bytes, file: str, lang: st
             if n.type not in target_symbols:
                 body = _source_slice(source_bytes, n.start_byte, n.end_byte)
                 sig = body.split("\n")[0].strip()
-                kind = n.type.replace("_definition", "").replace("_declaration", "").replace("_item", "")
+                kind = (
+                    n.type.replace("_definition", "")
+                    .replace("_declaration", "")
+                    .replace("_item", "")
+                )
                 symbols.append(
                     Symbol(
                         name=container_name or "<anonymous>",
@@ -581,7 +608,12 @@ def _extract_calls(node, source: str, file: str, lang: str) -> list[CallSite]:
                 )
             )
 
-        if n.type in ("function_definition", "function_item", "function_declaration", "method_declaration"):
+        if n.type in (
+            "function_definition",
+            "function_item",
+            "function_declaration",
+            "method_declaration",
+        ):
             name_node = n.child_by_field_name("name")
             name = name_node.text.decode() if name_node else enclosing_fn
             for child in n.children:

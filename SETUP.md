@@ -1,212 +1,256 @@
-# TLDREADME Setup Guide
+# TLDREADME setup
 
-**Give this file to Claude Code (or any AI assistant) and let it set you up.**
+## 1. Install
 
-```
-Hey Claude, read this file and help me set up TLDREADME for my codebase.
-```
-
----
-
-## What You Need
-
-- **Python 3.11+** (**3.12 recommended**)
-- **Docker** (for Qdrant and FalkorDB)
-- **Ollama** (local LLM - free, private)
-- **ripgrep** (`rg`)
-
-## Step 1: Check Prerequisites
-
-```bash
-python3 --version    # need 3.11+
-docker --version     # need Docker running
-ollama --version     # need Ollama
-rg --version         # need ripgrep
-```
-
-### Install missing pieces
-
-```bash
-# macOS
-brew install python@3.12 ripgrep ollama
-brew install --cask docker
-
-# Ubuntu/Debian
-sudo apt install python3.12 python3.12-venv ripgrep docker.io docker-compose-v2
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Windows (WSL2)
-# Install Python 3.12, Docker Desktop, ripgrep, then:
-# curl -fsSL https://ollama.com/install.sh | sh
-```
-
-## Step 2: Pull Ollama Models
-
-TLDREADME uses two models. Pull them once, they stay cached.
-
-```bash
-ollama pull nomic-embed-text             # 274MB - code embeddings
-ollama pull qwen2.5-coder:3b-instruct   # 1.9GB - code understanding
-
-# Verify
-ollama list
-```
-
-Total: ~2.2GB. Runs on any machine with 4GB+ free RAM.
-
-## Step 3: Clone and Install
+TLDREADME requires Python 3.11 or newer. Python 3.12 is recommended for the
+CLI and is the pinned runtime used by the marketplace plugin.
 
 ```bash
 git clone https://github.com/gitspoked/tldr.git
 cd tldr
 python3.12 -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e '.[dev]'
-tldr doctor
-tldr doctor --fix    # interactive checkbox prompt for install/start suggestions
+source .venv/bin/activate
+pip install -e .
 ```
 
-## Step 4: Start Databases
+Install the development tools only when working on TLDREADME itself:
+
+```bash
+pip install -e '.[dev]'
+```
+
+The normal local stack also needs:
+
+- Docker
+- Ollama
+- ripgrep (`rg`)
+
+On macOS:
+
+```bash
+brew install python@3.12 ripgrep ollama uv
+brew install --cask docker
+```
+
+## 2. Run configuration
+
+The interactive setup asks for the provider, MCP tool profile, and cloud
+inference policy:
+
+```bash
+tldr setup
+```
+
+For a non-interactive local configuration:
+
+```bash
+tldr setup --provider ollama --tool-profile router
+```
+
+Setup writes `~/.config/tldreadme/config.json` by default. It stores endpoints,
+model names, tool profile, and inference policy. It does not store API keys or
+provider credentials.
+
+Check the saved state without contacting any service:
+
+```bash
+tldr setup --check
+tldr setup --check --json-output
+```
+
+If setup has not run, a plugin-launched MCP server remains responsive and
+exposes only `configuration_setup`. The tool returns
+`Must run Configuration - Setup first.` together with the setup commands.
+
+## 3. Prepare the local provider
+
+Ollama models must be downloaded explicitly:
+
+```bash
+ollama pull nomic-embed-text
+ollama pull qwen2.5-coder:3b-instruct
+ollama list
+```
+
+TLDREADME does not call `ollama pull` and does not use an inference endpoint
+that implicitly downloads a model. Before a direct Ollama request, it checks
+the exact model against `/api/tags`.
+
+Start Qdrant and FalkorDB:
 
 ```bash
 docker compose up -d
+docker compose ps
 ```
 
-This starts **Qdrant** (vector search) and **FalkorDB** (graph database). That's it. Ollama runs natively - no container needed.
-
-Verify:
+Then verify the complete runtime:
 
 ```bash
-docker compose ps                          # both healthy
-curl -s http://localhost:6333/healthz      # Qdrant
-redis-cli -p 6379 ping                     # FalkorDB → PONG
-curl -s http://localhost:11434/api/tags     # Ollama → your models
+tldr doctor
 ```
 
-## Step 5: Index Your Codebase
+## 4. Index a repository
 
 ```bash
-source .venv/bin/activate
-tldr init /path/to/your/project
+tldr init /path/to/project
 ```
 
-Output:
+This parses supported source files, extracts dependencies, stores symbol
+embeddings in Qdrant, builds the FalkorDB graph, refreshes the hot index, and
+writes `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md`.
 
-```
-TLDREADME initializing /path/to/your/project
-
-Parsing code with tree-sitter...
-  Found 847 symbols in 42 files (12,350 lines)
-
-Embedding into Qdrant...
-  Embedded 847 code chunks
-
-Building knowledge graph in FalkorDB...
-  Graphed 2,341 call edges, 198 imports
-
-Generating context files...
-  Written: /path/to/your/project/.claude/TLDR.md
-
-Done. Codebase indexed.
-```
-
-## Step 6: Connect to Claude Code
-
-### Option A: CLI
+Use the no-infrastructure path before indexing or when services are offline:
 
 ```bash
-claude mcp add tldreadme -- /path/to/tldreadme/.venv/bin/python3.12 -m tldreadme.mcp_server
+tldr peek /path/to/project
+tldr peek /path/to/file.py
+```
 
-# Optional SSE transport for non-stdio clients
+## 5. Install the plugin
+
+Install `uv` first so the plugin can launch the pinned package with `uvx`.
+
+Codex:
+
+```bash
+codex plugin marketplace add gitspoked/tldr
+codex plugin add tldreadme@gitspoked
+```
+
+Claude Code:
+
+```text
+/plugin marketplace add gitspoked/tldr
+/plugin install tldreadme@gitspoked
+/reload-plugins
+```
+
+The default plugin surface is the four-tool `router` profile. To expose direct
+specialist tools, save the `full` profile and restart the host:
+
+```bash
+tldr setup --provider ollama --tool-profile full
+```
+
+See [docs/TOOLS.md](docs/TOOLS.md) for the complete catalog and capability
+requirements.
+
+## LiteLLM proxy
+
+Use `docker-compose.llm.yml` when inference should run through a LiteLLM proxy:
+
+```bash
+cp .env.example .env
+docker compose -f docker-compose.llm.yml up -d
+tldr setup \
+  --provider litellm \
+  --litellm-url http://localhost:4000 \
+  --embed-model embed \
+  --chat-model chat
+tldr doctor
+```
+
+Configure the upstream provider and credentials in LiteLLM or its environment.
+TLDREADME can add `Authorization: Bearer` from `LITELLM_API_KEY` or
+`LITELLM_MASTER_KEY`; it never persists those values.
+
+Codex, Claude, and Gemini consumer-subscription selections in `tldr setup` are
+host routing preferences. They do not grant API access and cannot be reused as
+LiteLLM credentials.
+
+Expanded non-code or code-level cloud inference requires:
+
+1. an explicit permission flag,
+2. at least one selected subscription target, and
+3. acknowledgement that selected context may leave the local machine.
+
+For example:
+
+```bash
+tldr setup \
+  --provider litellm \
+  --litellm-url http://localhost:4000 \
+  --allow-cloud-non-code \
+  --cloud-subscription codex \
+  --acknowledge-cloud-warning
+```
+
+Code-level cloud expansion remains disabled unless
+`--allow-cloud-code` is also supplied.
+
+## Timeouts and model readiness
+
+Every model request has both an HTTP transport timeout and a hard wall-clock
+deadline. The default deadline is 15 seconds:
+
+```bash
+export TLDREADME_MODEL_TIMEOUT_SECONDS=15
+```
+
+When a provider is loading or downloading a model elsewhere, TLDREADME returns
+a structured `model_unavailable` response after the deadline. The response
+includes the provider, model, operation, deadline, reason, fallback tools, and
+recommended next action.
+
+Common Ollama fixes:
+
+```bash
+ollama list
+ollama pull MODEL_NAME
+ollama serve
+```
+
+## Manual MCP launch
+
+The marketplace plugin is preferred, but the stdio server can also be
+registered directly:
+
+```bash
+claude mcp add tldreadme -- /path/to/tldr/.venv/bin/tldr serve
+```
+
+For a network client:
+
+```bash
 tldr serve --transport sse --host 127.0.0.1 --port 8900
 ```
 
-### Option B: settings.json
-
-Add to `~/.claude/settings.json` or your project's `.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "tldreadme": {
-      "command": "/path/to/tldreadme/.venv/bin/python3.12",
-      "args": ["-m", "tldreadme.mcp_server"]
-    }
-  }
-}
-```
-
-### Verify
-
-In Claude Code:
-
-```
-Use the know tool to look up "main" in my codebase.
-```
-
-If Claude calls the MCP tool and returns code - you're set.
-
-## Step 7: Watch Mode (Optional)
-
-Keep the index fresh as you code:
-
-```bash
-tldr watch /path/to/your/project
-```
-
-On file save: re-parses the changed file, updates embeddings and graph automatically.
-
----
-
-## Alternative: Cloud LLM Instead of Ollama
-
-If you don't want to run models locally, use `docker-compose.llm.yml` which adds **LiteLLM** as a proxy to OpenAI, Anthropic, or OpenRouter.
-
-```bash
-# 1. Set your API key
-cp .env.example .env
-# Edit .env - add ONE of:
-#   OPENAI_API_KEY=sk-...
-#   ANTHROPIC_API_KEY=sk-ant-...
-#   OPENROUTER_API_KEY=sk-or-...
-
-# 2. Edit litellm-config.yaml - uncomment your provider
-
-# 3. Start with LiteLLM stack instead
-docker compose -f docker-compose.llm.yml up -d
-```
-
-This gives you Qdrant + FalkorDB + LiteLLM (port 4000). In your `.env`, set `LITELLM_URL=http://localhost:4000`, `QDRANT_URL=http://localhost:6333`, and `FALKORDB_URL=redis://localhost:6379` so the app points at the LiteLLM stack instead of the default local-first ports.
-
----
-
-## Quick Reference
-
-| Command | What |
-|---------|------|
-| `docker compose up -d` | Start Qdrant + FalkorDB |
-| `tldr init /path` | Index a codebase |
-| `tldr serve` | Start MCP server |
-| `tldr watch /path` | Auto re-index on saves |
-| `tldr ask "question"` | RAG answer from CLI |
-
-## Two Docker Compose Files
-
-| File | Services | When to use |
-|------|----------|-------------|
-| `docker-compose.yml` | Qdrant + FalkorDB | **Default.** You have Ollama locally. |
-| `docker-compose.llm.yml` | Qdrant + FalkorDB + LiteLLM | Cloud LLM. No local Ollama. |
-
 ## Troubleshooting
 
-**"No module named tldreadme"** - `source .venv/bin/activate`
+`Must run Configuration - Setup first.`
 
-**"Connection refused" on Qdrant/FalkorDB** - `docker compose up -d`, wait 10 seconds
+```bash
+tldr setup
+tldr setup --check
+```
 
-**"tree-sitter Language init error"** - `pip install 'tree-sitter==0.21.3' 'tree-sitter-languages==1.10.2'`
+`model_missing`
 
-**Ollama not responding** - `ollama serve` (or check if it's running: `curl http://localhost:11434/api/tags`)
+```bash
+ollama list
+ollama pull MODEL_NAME
+```
 
-**Parse is slow on first run** - Normal for large codebases. Subsequent `watch` updates are incremental and fast.
+`model_unavailable` with `status: timeout`
 
-**Port 6379 conflict** - FalkorDB uses the standard Redis protocol port. If it collides on your machine, change the host-side port mapping in `docker-compose.yml`.
+The provider did not respond before the configured deadline. Check whether it
+is loading or downloading a model, verify the endpoint, and retry after the
+provider is ready.
+
+Qdrant or FalkorDB connection refused:
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+Tree-sitter compatibility error:
+
+```bash
+pip install 'tree-sitter==0.21.3' 'tree-sitter-languages==1.10.2'
+```
+
+Missing language-server tools:
+
+Install the language server for the file type, then restart the MCP server.
+`tldr doctor` lists detected language servers and install suggestions.

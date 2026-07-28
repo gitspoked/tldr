@@ -1,136 +1,59 @@
-# Notes
+# Maintainer notes
 
-## What This Repo Is
+This is a tactical continuity file, not the product specification. Use this
+trust order when repository documents disagree:
 
-TLDREADME is a local-first code intelligence tool for a repository. It parses code with tree-sitter, indexes it into Qdrant and FalkorDB, exposes that knowledge through MCP, and keeps a small local workboard under `.tldr/work/`.
+1. source code, tests, and package manifests;
+2. `README.md`, `SETUP.md`, `AGENTS.md`, and the host-specific context files;
+3. a human-owned `TLDROADMAP.md`, when present;
+4. `.tldr/roadmap/TLDRPLANS.md` and timestamped planning captures;
+5. generated `.claude/TLDR*.md` files.
 
-In plain terms: it is trying to make repo context good enough that an LLM starts from understanding instead of guesswork.
+## Stable contracts
 
-## What To Trust
+- Setup is explicit and durable. Before configuration, MCP exposes only
+  `configuration_setup`.
+- The router profile exposes four tools: `repo_next_action`, `repo_lookup`,
+  `change_plan`, and `verify_change`.
+- The full profile exposes direct specialist tools only when their hard
+  dependencies are ready.
+- Ollama models are checked before inference and are never downloaded
+  implicitly.
+- Model requests have a transport timeout and an independent wall-clock
+  deadline.
+- Cloud inference permissions are opt-in. Subscription selections are routing
+  preferences, not credentials.
+- Plans, sessions, child-project decisions, and saved reports remain
+  repository-local and file-backed.
+- `parser.py` remains the public compatibility facade over the extraction
+  modules.
 
-Trust order matters:
+## Generated state
 
-- First: source code, tests, and manifests
-- Second: bedrock context docs: `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, and `TLDROADMAP.md`
-- Third: planning digest: `.tldr/roadmap/TLDRPLANS.md`
-- Fourth: tactical notes: `TLDRNOTES.md`
-- Fifth: raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`
-- Sixth: local operational state under `.tldr/work/`
-- Last: generated files under `.claude/`
-
-The `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md` files are useful, but they are generated summaries. They are not the source of truth over the code.
-
-Context classification:
-
-- Bedrock context: `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md`
-- Planning digest: `.tldr/roadmap/TLDRPLANS.md`
-- Tactical notes: `TLDRNOTES.md`
-- Raw note drops: `.tldr/roadmap/TLDRPLANS.*.md`
-- Generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
-- Scratch / non-bedrock notes: `TLDREADME.md`
-
-`TLDRNOTES.md` is not the project destination. It is the tactical continuity pad: interruptions, caveats, weird findings, and short-lived reminders that still help a future human or agent resume work.
-
-`TLDROADMAP.md` is the durable direction doc. Keep the human-owned section at the top, and let tooling refresh only the lower auto-generated section.
-
-## What Is Stable Now
-
-The main agent-facing surface is intentionally small and should stay that way:
-
-- `repo_next_action`
-- `repo_lookup`
-- `change_plan`
-- `verify_change`
-
-Those four are the bedrock layer. Everything else should either support them or stay behind the fuller specialist surface.
-
-The test suite now has a bedrock gate:
-
-```bash
-.venv/bin/python -m pytest -m bedrock -q
-```
-
-That reports a clear GO / NO-GO result for the critical contracts this repo depends on.
-
-## What Was Just Fixed
-
-There was a real bug where `tldr init .` could generate almost-empty `.claude/TLDR*.md` files. The cause was a relative-path mismatch between indexing and generation. That has been fixed.
-
-So now the generated files are no longer blank. They still need quality work, but they are at least being built from the indexed repo correctly.
-
-## What Still Needs Improvement
-
-The generator is working, but the output is not yet impressive enough.
-
-Current issues:
-
-- it can rank `tests/` too high
-- the overview prose is still too loose
-- `TLDR_CONTEXT.md` signatures can truncate awkwardly
-- the generated summary is still more "it said something" than "this is sharp and useful"
-
-Desired direction:
-
-- production modules first for know-how
-- tests second as know-when / examples
-- cleaner signatures
-- tighter summaries
-
-## About LLMVM
-
-LLMVM could help as an optional second-pass writer, but not as the foundation.
-
-Good use:
-
-- refine prose in `.claude/TLDR.md`
-- turn structured repo context into a cleaner narrative
-- help produce tutorial-style summaries
-
-Bad use:
-
-- canonical indexing
-- symbol extraction
-- deciding what the source of truth is
-- replacing deterministic parsing/ranking inside TLDREADME
-
-So the right model is: let TLDREADME build the facts, then optionally let something like LLMVM polish the wording.
-
-## Near-Term Next Step
-
-If continuing from here, the best next pass is generator quality:
-
-1. rank production modules before tests
-2. move tests into a dedicated examples/validation section
-3. clean up signature rendering in `TLDR_CONTEXT.md`
-4. only then consider optional prose refinement
-
-## Resume After Interruption
-
-If this repo is reopened after a power outage or interrupted session, start here:
-
-- the bedrock layer is already landed and tested
-- `tldr init .` relative-root generation was fixed
-- the current weak spot is generator quality, not indexing correctness
-
-Recent committed milestones:
-
-- router/state contract hardening
-- bedrock contract test reporting
-- relative-root fix for generated `.claude/TLDR*.md`
-
-Likely current local noise after testing:
+The following paths are expected to change during normal use and should not be
+treated as hand-authored source:
 
 - `.claude/TLDR.md`
 - `.claude/TLDR_CONTEXT.md`
+- `.tldr/roadmap/TLDRPLANS*.md`
+- `.tldr/work/sessions/`
+- `.tldr/security/reports/`
 
-Those generated files may be modified just because `tldr init .` was run. Treat them as outputs, not as evidence that core code changed.
+`tldr current-roadmap .` creates or refreshes `TLDROADMAP.md`. It preserves the
+human-owned section and replaces only the marked generated section.
 
-Best restart command set:
+## Release checks
 
 ```bash
-git status --short
-.venv/bin/python -m pytest -m bedrock -q
 .venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -m bedrock -q
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+uv build
+python tools/mcp-smoke.py --profile router --setup-state required
+python tools/mcp-smoke.py --profile router --setup-state configured
+python tools/mcp-smoke.py --profile full --setup-state configured
 ```
 
-If those are green, continue with generator-quality work rather than re-debugging the indexing pipeline.
+Also verify a clean wheel install and validate both marketplace manifests
+before moving a release tag.

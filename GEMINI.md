@@ -1,95 +1,75 @@
-# Project Overview
+# Repository guidance
 
-This is a Python project named `tldreadme`. It's a command-line tool designed to provide a "TL;DR" for any codebase. It analyzes a directory of code, parses it using `tree-sitter`, embeds the symbols into a `Qdrant` vector database, and builds a knowledge graph of the code's relationships in `FalkorDB`.
+TLDREADME is a Python CLI and Model Context Protocol server for local-first
+repository reconnaissance, code navigation, planning, and verification.
 
-The primary goal is to give a large language model (LLM) full codebase context. It can be used locally with `Ollama` or with cloud providers like OpenAI and Anthropic.
+The indexing pipeline parses source with tree-sitter, stores symbol embeddings
+in Qdrant, builds call/import/dependency relationships in FalkorDB, and writes
+local context files. Direct Ollama is the default model path; an
+OpenAI-compatible LiteLLM proxy is optional.
 
-The project provides a CLI for humans and an MCP (Machine-Centric Protocol) server for LLMs to interact with the indexed codebase.
-
-## Building and Running
-
-The project uses Python 3.11+ and Docker.
-
-### Prerequisites
-
-- Python 3.11+ (3.12 recommended)
-- Docker
-- `ripgrep`
-
-### Installation
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/gitspoked/tldr.git
-    cd tldr
-    ```
-2.  Create and activate a virtual environment:
-    ```bash
-    python3.12 -m venv .venv
-    source .venv/bin/activate
-    ```
-3.  Install dependencies:
-    ```bash
-    pip install -e '.[dev]'
-    ```
-
-### Running the Tool
-
-**Start Infrastructure:**
-
-The core services (Qdrant, FalkorDB, etc.) run in Docker.
+## Setup
 
 ```bash
-docker compose up -d
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+tldr setup
+tldr doctor
 ```
 
-If using local LLMs with Ollama, you'll need to pull the models:
+For the default local stack:
 
 ```bash
 ollama pull nomic-embed-text
 ollama pull qwen2.5-coder:3b-instruct
+docker compose up -d
 ```
 
-**Index a Codebase:**
+TLDREADME never pulls an Ollama model during a tool call. Provider requests use
+the bounded client in `tldreadme/model_client.py` and return structured
+readiness errors on missing models, failed requests, or timeouts.
 
-To analyze a project, use the `init` command:
-
-```bash
-tldr init /path/to/your/project
-```
-
-This will parse, embed, graph, and generate summary files for the target codebase.
-
-**Run the MCP Server:**
-
-To expose the codebase tools to an LLM, start the MCP server:
+## Main commands
 
 ```bash
+tldr peek PATH
+tldr init PATH
+tldr watch PATH
 tldr serve
+tldr serve --tool-profile full
+tldr ask "question"
+tldr summary
+tldr audit all --dry-run
 ```
 
-This will start a server that an LLM like Gemini can connect to for codebase-aware tasks.
+## Stable MCP contract
 
-**Run Tests:**
+The default `router` profile exposes:
 
-The project uses `pytest` for testing.
+- `repo_next_action`
+- `repo_lookup`
+- `change_plan`
+- `verify_change`
 
-```bash
-pytest
-```
+These tools preserve the normalized keys `summary`, `confidence`, `evidence`,
+`recommended_next_action`, `verification_commands`, and `fallback_used`.
 
-To run the critical "bedrock" contract tests:
+Direct specialist tools are available through the `full` profile and are
+capability-filtered at runtime. See `docs/TOOLS.md` and `repo://tooling`.
+
+## Development
+
+- Keep CLI wiring in `tldreadme/cli.py`.
+- Keep provider configuration in `tldreadme/config.py`.
+- Keep model transport and deadlines in `tldreadme/model_client.py`.
+- Preserve `tldreadme/parser.py` as the compatibility facade over parsing,
+  dependency, and context-document modules.
+- Extend the four router tools for common workflows; keep direct specialist
+  behavior in the `full` profile.
+- Add tests for behavior changes and run both gates:
 
 ```bash
 python -m pytest -m bedrock -q
+python -m pytest -q
 ```
-
-## Development Conventions
-
--   **CLI:** The main command-line interface is built with the `click` library and is defined in `tldreadme/cli.py`.
--   **Core Pipeline:** The main indexing logic is in `tldreadme/pipeline.py`, which orchestrates parsing, embedding, and graph creation.
--   **LLM Integration:** The `tldreadme/mcp_server.py` file is crucial. It creates an MCP server that exposes a rich set of tools and resources for LLMs. It has different "tool profiles" (`router` and `full`) to expose varying levels of tool complexity.
--   **Code Parsing:** The project uses `tree-sitter` for parsing a wide variety of programming languages. The parsing logic is in `tldreadme/asts.py`.
--   **Dependencies:** Project dependencies are managed in `pyproject.toml`.
--   **Lazy Loading:** The `tldreadme.lazy` module is used to defer the import of heavy modules like `rag` and `lsp` until they are actually needed, which improves startup performance.
--   **Configuration:** The project uses `.env` files for configuration, with `.env.example` as a template. `litellm-config.yaml` is used for configuring the LLM provider.

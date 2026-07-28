@@ -41,8 +41,12 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
 
     stats = terminalreporter.stats
     passed = _report_nodeids(stats.get("passed", []), cases)
-    failed = _report_nodeids(stats.get("failed", []), cases) | _report_nodeids(stats.get("error", []), cases)
-    skipped = _report_nodeids(stats.get("skipped", []), cases) | _report_nodeids(stats.get("xfailed", []), cases)
+    failed = _report_nodeids(stats.get("failed", []), cases) | _report_nodeids(
+        stats.get("error", []), cases
+    )
+    skipped = _report_nodeids(stats.get("skipped", []), cases) | _report_nodeids(
+        stats.get("xfailed", []), cases
+    )
     executed = passed | failed | skipped
     missing = set(cases) - executed
 
@@ -57,7 +61,9 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
         f"({coverage:.1f}% weighted reliance coverage)."
     )
 
-    for nodeid, case in sorted(cases.items(), key=lambda item: (-item[1].reliance_percent, item[1].case_id)):
+    for nodeid, case in sorted(
+        cases.items(), key=lambda item: (-item[1].reliance_percent, item[1].case_id)
+    ):
         if nodeid in passed:
             status = "PASS"
         elif nodeid in failed:
@@ -66,6 +72,8 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
             status = "SKIP"
         else:
             status = "MISS"
-        terminalreporter.line(f"{status} [{case.reliance_percent:.1f}%] {case.case_id}: {case.purpose}")
+        terminalreporter.line(
+            f"{status} [{case.reliance_percent:.1f}%] {case.case_id}: {case.purpose}"
+        )
         terminalreporter.line(f"  use case: {case.use_case}")
         terminalreporter.line(f"  similar: {', '.join(case.similar_use_cases)}")

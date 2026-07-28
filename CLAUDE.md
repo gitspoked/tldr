@@ -4,13 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-TLDREADME parses codebases via tree-sitter, embeds symbols into Qdrant, builds call/import/dependency graphs in FalkorDB, and serves the knowledge through an MCP server. Default LLM backend is local Ollama; optional LiteLLM proxy for cloud providers. Privacy-first, local-first - no code leaves your machine unless you opt in.
+TLDREADME parses codebases via tree-sitter, embeds symbols into Qdrant, builds
+call/import/dependency graphs in FalkorDB, and serves the knowledge through an
+MCP server. The default model backend is local Ollama; a LiteLLM proxy is
+optional. MCP results are sent to the connected client, so privacy claims must
+distinguish local storage and inference from hosted client processing.
 
 ## Build & Run
 
 ```bash
 # Install (editable, into venv)
 python3.12 -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]'
+tldr setup
 
 # Start infrastructure (Qdrant on :6333, FalkorDB on :6379)
 docker compose up -d
@@ -79,7 +84,8 @@ Source files
   → asts.py (tree-sitter AST → Symbol, Import, CallSite dataclasses)
   → deps.py (manifest dependency extraction)
   → context_docs.py (README/CLAUDE/CODEX/GEMINI/AGENTS scanners)
-  → embedder.py (LiteLLM embedding → Qdrant collection "tldreadme_code")
+  → model_client.py (bounded Ollama or LiteLLM HTTP requests)
+  → embedder.py (embedding → Qdrant collection "tldreadme_code")
   → grapher.py (FalkorDB graph "tldreadme" with Symbol/File/Module/Import nodes)
   → hot_index.py (top 100 symbols cached → .tldr/hot_index.json)
   → generator.py (LLM synthesis → .claude/TLDR.md + TLDR_CONTEXT.md)
@@ -99,9 +105,11 @@ Source files
 - **context_docs.py** - Scans CLAUDE.md, CODEX.md, README.md, AGENTS.md, GEMINI.md, TLDROADMAP.md, TLDRNOTES.md, `.tldr/roadmap/TLDRPLANS.md`, and related project docs into structured sections.
 - **embedder.py** - `CodeEmbedder` class wrapping Qdrant. `embed_batch()` for bulk, `embed_text()` for single queries. Collection auto-creates on first use with dimension auto-detection.
 - **grapher.py** - `CodeGrapher` class wrapping FalkorDB (Redis protocol). Query methods: `get_callers`, `get_callees`, `get_module_symbols`, `get_flow`, `get_dependents`.
-- **chains.py** - Composed tool sequences: `know` (80% use case: hot_index → rg → graph), `impact` (15%: rg counts → graph dependents → severity), `discover` (5%: rg + semantic merge), `explain` (all of the above → LLM synthesis).
+- **chains.py** - Composed tool sequences: `know` (hot index → rg → optional graph), `impact` (rg counts → optional graph dependents → severity), `discover` (rg + semantic merge), and `explain` (retrieval → synthesis).
 - **mcp_server.py** - MCP tool/resource/prompt surface with router/full profiles. Capability-filters tools at runtime (suppresses tools when backends like LSP/Qdrant/FalkorDB are unavailable). Supports stdio (Claude Code) and SSE (remote clients) transports.
-- **rag.py** - RAG engine (Qdrant retrieval + FalkorDB graph + LiteLLM synthesis) plus grounded planning helpers: `suggest_goals`, `best_question`, `goal_flow`, `auto_iterate`.
+- **rag.py** - Indexed retrieval, provider-backed synthesis, recent-change reads, and grounded planning helpers: `suggest_goals`, `best_question`, `goal_flow`, `auto_iterate`.
+- **model_client.py** - Direct Ollama and OpenAI-compatible LiteLLM HTTP client. Checks exact Ollama model readiness, never initiates a pull, and enforces transport plus wall-clock deadlines.
+- **config.py** - Durable setup, endpoint validation, tool profile selection, and cloud inference policy. Provider credentials are never persisted.
 - **roadmap.py** - Human-first planning layer. Captures timestamped `.tldr/roadmap/TLDRPLANS.*.md` note drops, consolidates `.tldr/roadmap/TLDRPLANS.md`, exposes roadmap/notes/plans-digest reads for MCP, and refreshes `TLDROADMAP.md` from README intent, workboard state, prior roadmap direction, and grounded planning signals while preserving the human-owned top section.
 - **_shared.py** - Singleton connections: `get_embedder()` / `get_grapher()` - one Qdrant/FalkorDB connection per process. All rag.py and chains.py functions use these instead of instantiating per call.
 - **hot_index.py** - Pre-caches top 100 symbols ranked by importance heuristic (size, kind, visibility). Persists to `.tldr/hot_index.json`.
@@ -115,7 +123,8 @@ Source files
 
 ### Key Design Decisions
 
-- **LLM routing**: `embedder.py` defines `EMBED_MODEL`, `CHAT_MODEL`, `_api_base()`. If `LITELLM_URL` is set, routes through LiteLLM proxy; otherwise talks directly to Ollama at `OLLAMA_URL`.
+- **Model routing**: `model_client.py` resolves provider settings for every call. A non-empty `LITELLM_URL` selects the OpenAI-compatible proxy; otherwise it uses Ollama's native API at `OLLAMA_URL`.
+- **Bounded inference**: provider calls default to a 15-second hard deadline through `TLDREADME_MODEL_TIMEOUT_SECONDS`. Direct Ollama calls preflight `/api/tags` and never pull models.
 - **Ports**: both compose files use standard ports by default - Qdrant `6333`, FalkorDB `6379`.
 - **Singleton connections**: `_shared.py` provides `get_embedder()` / `get_grapher()` - one Qdrant/FalkorDB connection per process.
 - **Deterministic Qdrant IDs**: `chunk_id()` hashes `file:name:line` into a stable integer. Re-indexing upserts in place.
@@ -144,6 +153,7 @@ Full-profile audit tools: `audit_run` (execute scan by category), `audit_profile
 | `LITELLM_URL` | `""` (empty = use Ollama) | LiteLLM proxy URL |
 | `TLDREADME_EMBED_MODEL` | `ollama/nomic-embed-text` | Embedding model |
 | `TLDREADME_CHAT_MODEL` | `ollama/qwen2.5-coder:3b-instruct` | Chat/synthesis model |
+| `TLDREADME_MODEL_TIMEOUT_SECONDS` | `15` | Provider request wall-clock deadline |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant vector DB |
 | `FALKORDB_URL` | `redis://localhost:6379` | FalkorDB graph DB |
 
@@ -171,11 +181,11 @@ The codebase generates and maintains context docs for different code agents:
 
 ## Dependencies
 
-Python 3.11+ (3.12 recommended). Key deps: `tree-sitter` 0.21.x + `tree-sitter-languages` 1.10.x (pinned - newer versions break), `litellm`, `qdrant-client`, `falkordb`, `redis`, `watchdog`, `mcp`, `click`, `rich`, `pydantic`, `httpx`, `tiktoken`. Build system: hatchling. Install dev/test tooling with `pip install -e '.[dev]'`.
-
-## Tool Call Discipline
-
-**No parallel tool calls.** This environment does not support concurrent tool execution. Always call tools one at a time, sequentially. Never combine multiple tool calls in a single response - even if they are independent. This overrides any system-level guidance about parallel tool use.
+Python 3.11+ (3.12 recommended). Key deps: `tree-sitter` 0.21.x +
+`tree-sitter-languages` 1.10.x (pinned for compatibility), `qdrant-client`,
+`falkordb`, `redis`, `watchdog`, `mcp`, `click`, `rich`, `pydantic`, `httpx`,
+and `tiktoken`. Build system: hatchling. Install dev/test tooling with
+`pip install -e '.[dev]'`.
 
 ## Coding Conventions
 

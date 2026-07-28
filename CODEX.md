@@ -17,6 +17,7 @@ The main product split is:
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
+.venv/bin/tldr setup
 .venv/bin/tldr doctor
 .venv/bin/python -m pytest -m bedrock -q
 .venv/bin/python -m pytest -q
@@ -55,6 +56,9 @@ Preserve the normalized top-level payload fields:
 - `tldreadme/roadmap.py` owns `.tldr/roadmap/TLDRPLANS.md` and `TLDROADMAP.md`.
 - `tldreadme/workboard.py` owns plans, tasks, and canonical session snapshots under `.tldr/work/`.
 - `tldreadme/context_docs.py` defines which root docs and planning docs become router-visible context.
+- `tldreadme/config.py` owns durable setup and inference policy.
+- `tldreadme/model_client.py` owns bounded Ollama and LiteLLM HTTP requests. It must never trigger a model pull.
+- `docs/TOOLS.md` documents router/full exposure and hard backend requirements.
 
 ## Trust Order
 

@@ -1,6 +1,5 @@
 """Tests for the file-backed workboard."""
 
-from pathlib import Path
 import yaml
 
 from tldreadme import workboard
@@ -88,7 +87,9 @@ def test_current_plan_uses_session_pointer(tmp_path):
 def test_update_session_tracks_focus_and_overlap(tmp_path):
     root = tmp_path / "work"
     plan = workboard.create_plan("Overlap", "Avoid duplicated effort", root=root, set_current=False)
-    task = workboard.add_task(plan["id"], "Patch parser", phase="Build", root=root, set_current=False)
+    task = workboard.add_task(
+        plan["id"], "Patch parser", phase="Build", root=root, set_current=False
+    )
 
     first = workboard.update_session(
         actor_id="claude-code",
@@ -130,8 +131,12 @@ def test_update_session_tracks_focus_and_overlap(tmp_path):
 def test_update_session_replaces_claims_instead_of_appending(tmp_path):
     root = tmp_path / "work"
 
-    workboard.update_session(actor_id="claude-code", claimed_files=["one.py"], claimed_symbols=["Alpha"], root=root)
-    workboard.update_session(actor_id="claude-code", claimed_files=["two.py"], claimed_symbols=[], root=root)
+    workboard.update_session(
+        actor_id="claude-code", claimed_files=["one.py"], claimed_symbols=["Alpha"], root=root
+    )
+    workboard.update_session(
+        actor_id="claude-code", claimed_files=["two.py"], claimed_symbols=[], root=root
+    )
 
     current = workboard.current_plan(root=root, actor_id="claude-code")
 

@@ -2,19 +2,37 @@
 
 from datetime import timedelta
 
-from tldreadme import summary
-from tldreadme import workboard
+from tldreadme import summary, workboard
 
 
 def test_build_summary_marks_checkpoint(monkeypatch, tmp_path):
-    monkeypatch.setattr(summary, "_git_recent_commits", lambda *_args, **_kwargs: [{"short_commit": "abc123", "subject": "Change"}])
-    monkeypatch.setattr(summary, "_git_working_tree_changes", lambda *_args, **_kwargs: [{"status": " M", "path": "tldreadme/cli.py"}])
+    monkeypatch.setattr(
+        summary,
+        "_git_recent_commits",
+        lambda *_args, **_kwargs: [{"short_commit": "abc123", "subject": "Change"}],
+    )
+    monkeypatch.setattr(
+        summary,
+        "_git_working_tree_changes",
+        lambda *_args, **_kwargs: [{"status": " M", "path": "tldreadme/cli.py"}],
+    )
     monkeypatch.setattr(
         summary,
         "_workboard_updates",
-        lambda *_args, **_kwargs: {"plans": [{"title": "Plan", "status": "in_progress"}], "tasks": [], "session_notes": []},
+        lambda *_args, **_kwargs: {
+            "plans": [{"title": "Plan", "status": "in_progress"}],
+            "tasks": [],
+            "session_notes": [],
+        },
     )
-    monkeypatch.setattr(summary, "_children_updates", lambda *_args, **_kwargs: {"unknown": [], "counts": {"unknown": 0, "merged": 0, "ignored": 0}})
+    monkeypatch.setattr(
+        summary,
+        "_children_updates",
+        lambda *_args, **_kwargs: {
+            "unknown": [],
+            "counts": {"unknown": 0, "merged": 0, "ignored": 0},
+        },
+    )
 
     result = summary.build_summary(root=tmp_path, mark_checked=True, limit=5)
 
@@ -30,14 +48,32 @@ def test_render_summary_includes_sections():
             "since": "2026-03-22T00:00:00+00:00",
             "updated_checkpoint": "2026-03-22T01:00:00+00:00",
             "baseline": "checkpoint",
-            "counts": {"commits": 1, "working_tree_changes": 1, "tasks": 1, "sessions": 1, "session_notes": 1, "unknown_children": 1},
+            "counts": {
+                "commits": 1,
+                "working_tree_changes": 1,
+                "tasks": 1,
+                "sessions": 1,
+                "session_notes": 1,
+                "unknown_children": 1,
+            },
             "commits": [{"short_commit": "abc123", "subject": "Add summary"}],
             "working_tree": [{"status": " M", "path": "tldreadme/cli.py"}],
             "workboard": {
                 "plans": [{"title": "Plan", "status": "in_progress"}],
-                "tasks": [{"title": "Task", "status": "done", "plan_title": "Plan", "phase": "Build"}],
-                "sessions": [{"actor_id": "claude-code", "status": "active", "current_focus": "Patch parser"}],
-                "session_overlaps": [{"actors": ["claude-code", "codex"], "shared_files": ["tldreadme/parser.py"], "shared_symbols": [], "same_task": True}],
+                "tasks": [
+                    {"title": "Task", "status": "done", "plan_title": "Plan", "phase": "Build"}
+                ],
+                "sessions": [
+                    {"actor_id": "claude-code", "status": "active", "current_focus": "Patch parser"}
+                ],
+                "session_overlaps": [
+                    {
+                        "actors": ["claude-code", "codex"],
+                        "shared_files": ["tldreadme/parser.py"],
+                        "shared_symbols": [],
+                        "same_task": True,
+                    }
+                ],
                 "session_notes": [{"actor_id": "claude-code", "note": "Follow up on tests"}],
             },
             "children": {
@@ -66,8 +102,12 @@ def test_render_summary_includes_sections():
 
 def test_build_summary_includes_multi_session_workboard_updates(monkeypatch, tmp_path):
     work_root = tmp_path / ".tldr" / "work"
-    plan = workboard.create_plan("Session plan", "Track resumable work", root=work_root, set_current=False)
-    task = workboard.add_task(plan["id"], "Split parser", phase="Build", root=work_root, set_current=False)
+    plan = workboard.create_plan(
+        "Session plan", "Track resumable work", root=work_root, set_current=False
+    )
+    task = workboard.add_task(
+        plan["id"], "Split parser", phase="Build", root=work_root, set_current=False
+    )
 
     workboard.update_session(
         actor_id="claude-code",

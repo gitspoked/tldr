@@ -1,13 +1,14 @@
 """Directory watcher - re-indexes on file changes, keeps knowledge current."""
 
-from pathlib import Path
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
 import time
+from pathlib import Path
 
-from .parser import parse_file, detect_language
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
 from .embedder import CodeEmbedder, symbols_to_chunks
 from .grapher import CodeGrapher
+from .parser import detect_language, parse_file
 
 
 class CodeChangeHandler(FileSystemEventHandler):
@@ -36,7 +37,10 @@ class CodeChangeHandler(FileSystemEventHandler):
             return
 
         # Skip common noise
-        if any(skip in path.parts for skip in (".git", "node_modules", "target", "__pycache__", ".venv")):
+        if any(
+            skip in path.parts
+            for skip in (".git", "node_modules", "target", "__pycache__", ".venv")
+        ):
             return
 
         # Debounce - same file within 2 seconds
@@ -72,7 +76,7 @@ def start_watcher(directories: list[Path]):
         observer.schedule(handler, str(d), recursive=True)
 
     observer.start()
-    print(f"[tldr] watcher running. Ctrl+C to stop.")
+    print("[tldr] watcher running. Ctrl+C to stop.")
 
     try:
         while True:

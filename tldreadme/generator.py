@@ -1,8 +1,8 @@
 """TLDR.md generator - deterministic context from the current source tree."""
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-import re
 
 from .hot_index import HotIndex
 from .parser import ParseResult, parse_directory
@@ -126,11 +126,11 @@ def _collect_module_snapshots(
     for result in parse_results:
         file_path = Path(result.file)
         relative_file = _relative_path(root, file_path)
-        relative_module = relative_file.parent.as_posix() if relative_file.parent.as_posix() != "." else root.name
+        relative_module = (
+            relative_file.parent.as_posix() if relative_file.parent.as_posix() != "." else root.name
+        )
         container_names = {
-            symbol.name
-            for symbol in result.symbols
-            if symbol.kind in CONTAINER_KINDS
+            symbol.name for symbol in result.symbols if symbol.kind in CONTAINER_KINDS
         }
         snapshot = snapshots_by_path.setdefault(
             relative_module,
@@ -220,8 +220,13 @@ def _select_key_files(snapshot: ModuleSnapshot, limit: int = 5) -> list[str]:
     scores: dict[str, int] = {}
     for file_path in snapshot.files:
         stem = Path(file_path).stem
-        scores[stem] = scores.get(stem, 0) + sum(1 for symbol in snapshot.symbols if symbol.file == file_path)
-    return [stem for stem, _score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:limit]]
+        scores[stem] = scores.get(stem, 0) + sum(
+            1 for symbol in snapshot.symbols if symbol.file == file_path
+        )
+    return [
+        stem
+        for stem, _score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    ]
 
 
 def _signal_file_priority(file_path: str) -> int:
@@ -278,7 +283,9 @@ def _context_symbol_sort_key(symbol: SymbolSnapshot) -> tuple[int, int, int, int
     )
 
 
-def _select_key_entrypoints(snapshot: ModuleSnapshot, *, hot_index: HotIndex | None = None, limit: int = 6) -> list[str]:
+def _select_key_entrypoints(
+    snapshot: ModuleSnapshot, *, hot_index: HotIndex | None = None, limit: int = 6
+) -> list[str]:
     """Return key entrypoints for module summaries."""
 
     chosen: list[str] = []
@@ -344,7 +351,9 @@ def _pluralize_kind(kind: str, count: int) -> str:
     return f"{kind}s"
 
 
-def _build_overview_lines(root: Path, know_how: list[ModuleSnapshot], know_when: list[ModuleSnapshot]) -> list[str]:
+def _build_overview_lines(
+    root: Path, know_how: list[ModuleSnapshot], know_when: list[ModuleSnapshot]
+) -> list[str]:
     """Build a concise overview from the ranked module groups."""
 
     lines: list[str] = []
@@ -366,7 +375,9 @@ def _build_overview_lines(root: Path, know_how: list[ModuleSnapshot], know_when:
     return lines
 
 
-def _append_module_section(root: Path, lines: list[str], title: str, snapshots: list[ModuleSnapshot]) -> None:
+def _append_module_section(
+    root: Path, lines: list[str], title: str, snapshots: list[ModuleSnapshot]
+) -> None:
     """Append a concise section of ranked modules."""
 
     if not snapshots:
@@ -375,11 +386,15 @@ def _append_module_section(root: Path, lines: list[str], title: str, snapshots: 
     lines.append(title)
     lines.append("")
     for snapshot in snapshots:
-        lines.append(f"- **`{_module_label(snapshot, root)}`** ({snapshot.symbol_count} symbols) - {snapshot.summary}")
+        lines.append(
+            f"- **`{_module_label(snapshot, root)}`** ({snapshot.symbol_count} symbols) - {snapshot.summary}"
+        )
     lines.append("")
 
 
-def _append_module_details(root: Path, lines: list[str], title: str, snapshots: list[ModuleSnapshot]) -> None:
+def _append_module_details(
+    root: Path, lines: list[str], title: str, snapshots: list[ModuleSnapshot]
+) -> None:
     """Append detailed module summaries by section."""
 
     if not snapshots:
@@ -429,7 +444,9 @@ def _symbol_location(symbol: SymbolSnapshot) -> str:
     return f"{symbol.file}:{symbol.line}"
 
 
-def _append_context_section(root: Path, lines: list[str], title: str, snapshots: list[ModuleSnapshot]) -> None:
+def _append_context_section(
+    root: Path, lines: list[str], title: str, snapshots: list[ModuleSnapshot]
+) -> None:
     """Append grouped deep-context tables."""
 
     rendered = False

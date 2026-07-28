@@ -76,7 +76,9 @@ def test_generate_claude_md_ranks_production_before_tests_and_groups_sections(tm
         ),
     ]
 
-    output_path = generator.generate_claude_md(repo, output_dir=output_dir, parse_results=parse_results)
+    output_path = generator.generate_claude_md(
+        repo, output_dir=output_dir, parse_results=parse_results
+    )
     payload = output_path.read_text(encoding="utf-8")
     context = (repo / output_dir / "TLDR_CONTEXT.md").read_text(encoding="utf-8")
 
@@ -200,7 +202,9 @@ def test_run_init_resolves_relative_root_before_indexing(monkeypatch, tmp_path):
         def save(self, _path):
             return None
 
-    monkeypatch.setattr(pipeline, "parse_directory", lambda root: parse_calls.append(root) or fake_results)
+    monkeypatch.setattr(
+        pipeline, "parse_directory", lambda root: parse_calls.append(root) or fake_results
+    )
     monkeypatch.setattr(pipeline, "CodeEmbedder", lambda: FakeEmbedder())
     monkeypatch.setattr(pipeline, "symbols_to_chunks", lambda results: results)
     monkeypatch.setattr(pipeline, "CodeGrapher", lambda: FakeGrapher())
@@ -212,7 +216,9 @@ def test_run_init_resolves_relative_root_before_indexing(monkeypatch, tmp_path):
     monkeypatch.setattr(
         pipeline,
         "generate_claude_md",
-        lambda root, output_dir=".claude", **kwargs: generate_calls.append(root) or (resolved_repo / output_dir / "TLDR.md"),
+        lambda root, output_dir=".claude", **kwargs: (
+            generate_calls.append(root) or (resolved_repo / output_dir / "TLDR.md")
+        ),
     )
 
     pipeline.run_init(Path("."), output_dir=".claude")

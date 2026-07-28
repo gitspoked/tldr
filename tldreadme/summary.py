@@ -1,11 +1,10 @@
 """Human-facing repository summaries with a local checkpoint."""
 
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import subprocess
 
 import yaml
-
 
 SUMMARY_FILE = Path(".tldr/work/sessions/summary.yaml")
 DEFAULT_LOOKBACK = timedelta(days=1)
@@ -66,7 +65,9 @@ def mark_summary_checked(root: str | Path | None = None, *, at: str | None = Non
 
     _ensure_summary_dir(root)
     payload = {"summary_checked_at": at or _now().isoformat()}
-    _summary_file(root).write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=False), encoding="utf-8")
+    _summary_file(root).write_text(
+        yaml.safe_dump(payload, sort_keys=False, allow_unicode=False), encoding="utf-8"
+    )
     return payload
 
 
@@ -142,7 +143,13 @@ def _workboard_updates(repo_root: Path, since: datetime, limit: int) -> dict:
 
     work_root = repo_root / ".tldr" / "work"
     if not work_root.exists():
-        return {"plans": [], "tasks": [], "sessions": [], "session_overlaps": [], "session_notes": []}
+        return {
+            "plans": [],
+            "tasks": [],
+            "sessions": [],
+            "session_overlaps": [],
+            "session_notes": [],
+        }
 
     from . import workboard
 
@@ -176,7 +183,9 @@ def _workboard_updates(repo_root: Path, since: datetime, limit: int) -> dict:
 
     session_details = []
     for session_summary in session_listing.get("sessions", []):
-        session = workboard.current_plan(root=work_root, session_id=session_summary["session_id"]).get("session", {})
+        session = workboard.current_plan(
+            root=work_root, session_id=session_summary["session_id"]
+        ).get("session", {})
         if session:
             session_details.append(session)
 
@@ -223,7 +232,10 @@ def _workboard_updates(repo_root: Path, since: datetime, limit: int) -> dict:
         left_updated = _parse_timestamp(left.get("updated_at"))
         for right in session_details[index + 1 :]:
             right_updated = _parse_timestamp(right.get("updated_at"))
-            if not ((left_updated and left_updated >= since) or (right_updated and right_updated >= since)):
+            if not (
+                (left_updated and left_updated >= since)
+                or (right_updated and right_updated >= since)
+            ):
                 continue
             pair = tuple(sorted([left.get("session_id", ""), right.get("session_id", "")]))
             if pair in seen_pairs:
@@ -305,7 +317,9 @@ def build_summary(
 
     updated_checkpoint = None
     if mark_checked:
-        updated_checkpoint = mark_summary_checked(repo_root, at=until.isoformat())["summary_checked_at"]
+        updated_checkpoint = mark_summary_checked(repo_root, at=until.isoformat())[
+            "summary_checked_at"
+        ]
 
     return {
         "root": str(repo_root),
@@ -376,14 +390,18 @@ def render_summary(summary: dict) -> str:
         lines.append("")
         lines.append("Tasks:")
         for task in tasks:
-            lines.append(f"- {task['title']} [{task['status']}] in {task['plan_title']} / {task['phase']}")
+            lines.append(
+                f"- {task['title']} [{task['status']}] in {task['plan_title']} / {task['phase']}"
+            )
 
     sessions = summary.get("workboard", {}).get("sessions", [])
     if sessions:
         lines.append("")
         lines.append("Sessions:")
         for session in sessions:
-            focus = session.get("current_focus") or session.get("next_action") or "No focus recorded"
+            focus = (
+                session.get("current_focus") or session.get("next_action") or "No focus recorded"
+            )
             lines.append(f"- {session['actor_id']} [{session['status']}] {focus}")
 
     overlaps = summary.get("workboard", {}).get("session_overlaps", [])
@@ -422,6 +440,8 @@ def render_summary(summary: dict) -> str:
 
     if len(lines) == 3:
         lines.append("")
-        lines.append("No commits, working tree changes, or workboard updates were detected in this window.")
+        lines.append(
+            "No commits, working tree changes, or workboard updates were detected in this window."
+        )
 
     return "\n".join(lines)

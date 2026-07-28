@@ -1,9 +1,8 @@
 """Fast text search via ripgrep - complements semantic search (Qdrant)."""
 
-import subprocess
 import json
+import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 from .runtime import ensure_rg_runtime
@@ -12,11 +11,12 @@ from .runtime import ensure_rg_runtime
 @dataclass
 class SearchHit:
     """A single rg match with context."""
+
     file: str
     line: int
-    text: str                    # the matching line
-    before: list[str]            # context lines before
-    after: list[str]             # context lines after
+    text: str  # the matching line
+    before: list[str]  # context lines before
+    after: list[str]  # context lines after
 
 
 def rg_search(
@@ -56,16 +56,26 @@ def rg_search(
         cmd.extend(["--type", file_type])
 
     # Skip common noise
-    cmd.extend([
-        "--glob", "!node_modules",
-        "--glob", "!target",
-        "--glob", "!dist",
-        "--glob", "!.git",
-        "--glob", "!*.min.js",
-        "--glob", "!*.min.css",
-        "--glob", "!*.map",
-        "--glob", "!__pycache__",
-    ])
+    cmd.extend(
+        [
+            "--glob",
+            "!node_modules",
+            "--glob",
+            "!target",
+            "--glob",
+            "!dist",
+            "--glob",
+            "!.git",
+            "--glob",
+            "!*.min.js",
+            "--glob",
+            "!*.min.css",
+            "--glob",
+            "!*.map",
+            "--glob",
+            "!__pycache__",
+        ]
+    )
 
     cmd.append(pattern)
     cmd.extend(paths)
@@ -150,12 +160,18 @@ def rg_files(
     if file_type:
         cmd.extend(["--type", file_type])
 
-    cmd.extend([
-        "--glob", "!node_modules",
-        "--glob", "!target",
-        "--glob", "!dist",
-        "--glob", "!.git",
-    ])
+    cmd.extend(
+        [
+            "--glob",
+            "!node_modules",
+            "--glob",
+            "!target",
+            "--glob",
+            "!dist",
+            "--glob",
+            "!.git",
+        ]
+    )
 
     cmd.append(pattern)
     cmd.extend(paths)
@@ -175,12 +191,18 @@ def rg_count(pattern: str, paths: list[str], file_type: Optional[str] = None) ->
     if file_type:
         cmd.extend(["--type", file_type])
 
-    cmd.extend([
-        "--glob", "!node_modules",
-        "--glob", "!target",
-        "--glob", "!dist",
-        "--glob", "!.git",
-    ])
+    cmd.extend(
+        [
+            "--glob",
+            "!node_modules",
+            "--glob",
+            "!target",
+            "--glob",
+            "!dist",
+            "--glob",
+            "!.git",
+        ]
+    )
 
     cmd.append(pattern)
     cmd.extend(paths)

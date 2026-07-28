@@ -1,7 +1,8 @@
 """Tests for nested child-project detection and acknowledgments."""
 
-from tldreadme import children
 import yaml
+
+from tldreadme import children
 
 from .bedrock import bedrock_case
 
