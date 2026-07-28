@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from . import __version__
+
 CONFIG_VERSION = 1
+PACKAGE_SOURCE = f"git+https://github.com/gitspoked/tldr.git@v{__version__}"
 DEFAULT_SETTINGS = {
     "OLLAMA_URL": "http://localhost:11434",
     "LITELLM_URL": "",
@@ -29,6 +32,27 @@ PROVIDER_MODEL_DEFAULTS = {
     },
 }
 SUBSCRIPTION_TARGETS = ("codex", "claude", "gemini")
+
+
+def setup_commands() -> dict[str, object]:
+    """Return setup paths for MCP, installed CLI, and plugin-only users."""
+
+    uvx_prefix = f"uvx --python 3.12 --from {PACKAGE_SOURCE} tldr setup"
+    return {
+        "mcp_tool": "configuration_setup",
+        "installed_cli": {
+            "interactive": "tldr setup",
+            "ollama": "tldr setup --provider ollama",
+            "litellm": "tldr setup --provider litellm --litellm-url http://localhost:4000",
+            "check": "tldr setup --check",
+        },
+        "plugin_uvx": {
+            "interactive": uvx_prefix,
+            "ollama": f"{uvx_prefix} --provider ollama",
+            "litellm": f"{uvx_prefix} --provider litellm --litellm-url http://localhost:4000",
+            "check": f"{uvx_prefix} --check",
+        },
+    }
 
 
 def _validate_endpoint(name: str, value: str, schemes: set[str]) -> str:
@@ -118,8 +142,10 @@ def configuration_status(
         "provider": provider or None,
         "path": str(target),
         "reason": reason,
+        "setup_tool": "configuration_setup",
         "setup_command": "tldr setup",
         "check_command": "tldr setup --check",
+        "setup_commands": setup_commands(),
         "inference_policy": (
             payload.get("inference_policy", {})
             if isinstance(payload.get("inference_policy"), dict)

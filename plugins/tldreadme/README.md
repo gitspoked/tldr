@@ -15,16 +15,19 @@ The bundled MCP server uses the smaller router-first tool surface:
 Install [`uv`](https://docs.astral.sh/uv/) so the plugin can launch the pinned
 TLDREADME release with `uvx` and its supported Python 3.12 runtime.
 
-Run configuration before enabling the plugin:
+If setup is incomplete, the server exposes only `configuration_setup` and
+returns the choices needed to finish configuration. Call that tool again with
+the selected provider and inference policy, then restart the host. A global
+`tldr` install is not required. Model calls never start an Ollama download;
+slow providers return a bounded readiness error.
+
+Manual plugin-only fallback:
 
 ```bash
-tldr setup
-tldr setup --check
+uvx --python 3.12 \
+  --from git+https://github.com/gitspoked/tldr.git@v0.1.4 \
+  tldr setup --provider ollama --tool-profile router
 ```
-
-If setup is incomplete, the server exposes only `configuration_setup` and
-returns the command needed to finish configuration. Model calls never start an
-Ollama download; slow providers return a bounded readiness error.
 
 ## Codex
 
@@ -50,7 +53,9 @@ graph, language-server, planning, workboard, and security tools are documented i
 [`docs/TOOLS.md`](../../docs/TOOLS.md) and become directly discoverable after:
 
 ```bash
-tldr setup --provider ollama --tool-profile full
+uvx --python 3.12 \
+  --from git+https://github.com/gitspoked/tldr.git@v0.1.4 \
+  tldr setup --provider ollama --tool-profile full
 ```
 
 Restart Codex or Claude Code after changing the profile. The MCP

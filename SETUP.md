@@ -59,8 +59,17 @@ tldr setup --check --json-output
 ```
 
 If setup has not run, a plugin-launched MCP server remains responsive and
-exposes only `configuration_setup`. The tool returns
-`Must run Configuration - Setup first.` together with the setup commands.
+exposes only `configuration_setup`. Call that tool with the provider and policy
+choices to write the same durable configuration as the CLI. A global `tldr`
+install is not required.
+
+For a manual plugin-only fallback:
+
+```bash
+uvx --python 3.12 \
+  --from git+https://github.com/gitspoked/tldr.git@v0.1.4 \
+  tldr setup --provider ollama --tool-profile router
+```
 
 ## 3. Prepare the local provider
 
@@ -88,6 +97,19 @@ Then verify the complete runtime:
 ```bash
 tldr doctor
 ```
+
+To turn missing-service and missing-tool guidance into a reviewable startup
+script:
+
+```bash
+tldr doctor --fix
+```
+
+Select the recommended commands with Space and confirm with Enter. TLDREADME
+writes an executable `start.sh` in the current directory without running it.
+Review the file, then run the commands individually or run `./start.sh` for
+faster start. Existing scripts are never overwritten; use `--fix-output` to
+choose another path.
 
 ## 4. Index a repository
 
@@ -126,7 +148,8 @@ Claude Code:
 ```
 
 The default plugin surface is the four-tool `router` profile. To expose direct
-specialist tools, save the `full` profile and restart the host:
+specialist tools, call `configuration_setup` with `tool_profile` set to `full`,
+then restart the host. Installed CLI users can save the same setting with:
 
 ```bash
 tldr setup --provider ollama --tool-profile full

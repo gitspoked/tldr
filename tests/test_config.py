@@ -13,6 +13,13 @@ def test_configuration_status_requires_setup(tmp_path):
     assert status["configured"] is False
     assert status["status"] == "setup_required"
     assert status["reason"] == "Must run Configuration - Setup first."
+    assert status["setup_tool"] == "configuration_setup"
+    assert status["setup_commands"]["installed_cli"]["interactive"] == "tldr setup"
+    assert (
+        status["setup_commands"]["plugin_uvx"]["ollama"] == "uvx --python 3.12 --from "
+        "git+https://github.com/gitspoked/tldr.git@v0.1.4 "
+        "tldr setup --provider ollama"
+    )
 
 
 def test_write_ollama_configuration_defaults_cloud_to_local_only(tmp_path):

@@ -6,7 +6,9 @@ and live backend capabilities.
 ## Discovery rules
 
 Before setup, `configuration_setup` is the only exposed tool. It returns the
-saved setup status, the cloud-processing warning, and equivalent CLI commands.
+saved setup status, the cloud-processing warning, and a configuration form.
+Call it again with the selected values to save setup. It also reports installed
+CLI and plugin-only `uvx` commands as manual fallbacks.
 
 After setup, the default `router` profile exposes four stable tools. The `full`
 profile exposes every direct specialist tool whose hard dependencies are
