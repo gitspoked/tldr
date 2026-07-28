@@ -1,5 +1,9 @@
 """Tests for CLI entry points."""
 
+from pathlib import Path
+
+import click
+import pytest
 from click.testing import CliRunner
 
 from tldreadme import cli
@@ -393,6 +397,112 @@ def test_select_doctor_fix_items_uses_questionary(monkeypatch):
     selected = cli._select_doctor_fix_items(checks)
 
     assert selected == checks
+
+
+def test_write_doctor_fix_script_creates_executable_without_overwrite(tmp_path, monkeypatch):
+    checks = [
+        {
+            "name": "FalkorDB",
+            "category": "service",
+            "install_options": [
+                {
+                    "label": "Start FalkorDB",
+                    "command": "docker compose up -d falkordb",
+                }
+            ],
+        },
+        {
+            "name": "Python LSP",
+            "category": "lsp",
+            "install_options": [
+                {
+                    "label": "Install basedpyright",
+                    "command": "npm install -g basedpyright",
+                }
+            ],
+        },
+    ]
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path / "start.sh"
+
+    result = cli._write_doctor_fix_script(checks, output_path=output)
+
+    script = output.read_text(encoding="utf-8")
+    assert result == output
+    assert script.startswith("#!/usr/bin/env bash\nset -euo pipefail\n")
+    assert f"cd {tmp_path}" in script
+    assert "docker compose up -d falkordb" in script
+    assert "npm install -g basedpyright" in script
+    assert output.stat().st_mode & 0o111
+
+    with pytest.raises(click.ClickException, match="Refusing to overwrite"):
+        cli._write_doctor_fix_script(checks, output_path=output)
+
+
+def test_doctor_fix_reports_generated_script_and_returns_success(monkeypatch, tmp_path):
+    runner = CliRunner()
+    script_path = tmp_path / "start.sh"
+
+    monkeypatch.setattr(
+        "tldreadme.runtime.runtime_report",
+        lambda: {
+            "ok": False,
+            "checks": [
+                {
+                    "name": "FalkorDB",
+                    "status": "error",
+                    "ok": False,
+                    "details": "missing",
+                    "category": "service",
+                    "required": True,
+                    "install_options": [
+                        {
+                            "label": "Start FalkorDB",
+                            "command": "docker compose up -d falkordb",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_doctor_fix_flow",
+        lambda *_args, **_kwargs: script_path,
+    )
+
+    result = runner.invoke(main, ["doctor", "--fix"])
+
+    assert result.exit_code == 0
+    assert "Run the selected commands, then rerun `tldr doctor`." in result.output
+
+
+def test_doctor_fix_flow_prints_direct_and_script_run_options(monkeypatch, tmp_path, capsys):
+    checks = [
+        {
+            "name": "FalkorDB",
+            "category": "service",
+            "install_options": [
+                {
+                    "label": "Start FalkorDB",
+                    "command": "docker compose up -d falkordb",
+                }
+            ],
+        }
+    ]
+    output = Path("start.sh")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli, "_select_doctor_fix_items", lambda *_args, **_kwargs: checks)
+
+    script_path = cli._run_doctor_fix_flow(checks, output_path=output)
+
+    assert script_path == tmp_path / output
+    assert (tmp_path / output).exists()
+    assert (
+        "Run these commands individually or run ./start.sh for faster start."
+        in capsys.readouterr().out
+    )
 
 
 def test_cli_lsp_invokes_semantic_query(monkeypatch, tmp_path):

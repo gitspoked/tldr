@@ -2388,7 +2388,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                                 tool["name"] for tool in details.get("suppressed_tools", [])[:10]
                             ],
                             "hint": (
-                                "Call `configuration_setup` or run `tldr setup`, then restart this plugin."
+                                "Call `configuration_setup`, or use a setup command "
+                                "from `configuration.setup_commands`, then restart this plugin."
                                 if setup_required
                                 else "Install or start the missing backend, or restart the server with `--tool-profile full` for the full specialist surface."
                                 if missing_backends
@@ -2401,10 +2402,12 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             ]
 
         if name == "configuration_setup":
-            from .config import configuration_status, write_configuration
+            from .config import configuration_status, setup_commands, write_configuration
 
             if not arguments.get("provider"):
                 status = configuration_status()
+                command_paths = setup_commands()
+                installed_cli = command_paths["installed_cli"]
                 return [
                     TextContent(
                         type="text",
@@ -2455,13 +2458,14 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                                         "required_when_cloud_enabled": True,
                                     },
                                 },
+                                "recommended_action": (
+                                    "Call this tool again with a provider and policy choices. "
+                                    "Use the CLI or plugin uvx commands only as a manual fallback."
+                                ),
                                 "commands": {
-                                    "interactive": "tldr setup",
-                                    "ollama": "tldr setup --provider ollama",
-                                    "litellm": (
-                                        "tldr setup --provider litellm "
-                                        "--litellm-url http://localhost:4000"
-                                    ),
+                                    **installed_cli,
+                                    "mcp_tool": command_paths["mcp_tool"],
+                                    "plugin_uvx": command_paths["plugin_uvx"],
                                 },
                             },
                             indent=2,
@@ -3037,7 +3041,8 @@ def start_server(
     if not setup["configured"]:
         print(
             "TLDRREADME SETUP REQUIRED: Must run Configuration - Setup first. "
-            "Run `tldr setup`, then restart Codex or Claude Code.",
+            "Call the `configuration_setup` tool. If it is unavailable, use a "
+            "setup command reported by configuration status, then restart the host.",
             file=sys.stderr,
             flush=True,
         )

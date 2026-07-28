@@ -84,9 +84,19 @@ Claude Code:
 /reload-plugins
 ```
 
-Run `tldr setup` before enabling the plugin. If setup is incomplete, the MCP
-server starts quickly with only `configuration_setup` available and reports:
-`Must run Configuration - Setup first.`
+Start a new Codex task or reload Claude Code after installing the plugin. If
+setup is incomplete, the MCP server starts quickly with only
+`configuration_setup` available. Call it to save the provider, tool profile,
+and cloud-inference policy, then restart the host. A global `tldr` install is
+not required.
+
+For manual plugin-only setup:
+
+```bash
+uvx --python 3.12 \
+  --from git+https://github.com/gitspoked/tldr.git@v0.1.4 \
+  tldr setup --provider ollama --tool-profile router
+```
 
 ## Tool profiles
 
@@ -103,7 +113,8 @@ These tools share the normalized fields `summary`, `confidence`, `evidence`,
 `recommended_next_action`, `verification_commands`, and `fallback_used`.
 
 The `full` profile adds direct history, search, graph, language-server,
-planning, workboard, and security tools:
+planning, workboard, and security tools. Select `tool_profile: "full"` when
+calling `configuration_setup`, or use the installed CLI:
 
 ```bash
 tldr setup --provider ollama --tool-profile full
@@ -147,7 +158,7 @@ tldr ask "question"                # answer from indexed repository context
 tldr serve                         # stdio MCP server, router profile by default
 tldr serve --transport sse -p 8900 # SSE MCP server
 tldr doctor                        # runtime and backend diagnostics
-tldr doctor --fix                  # interactive install/start suggestions
+tldr doctor --fix                  # select commands and write executable start.sh
 tldr summary                       # changes since the local summary checkpoint
 tldr plans-capture PATH            # capture planning notes from stdin
 tldr whats-next PATH               # grounded next strategic question

@@ -30,8 +30,13 @@ all-ref controls.
 ## Setup gate
 
 If only `configuration_setup` is available, call it without arguments to read
-the status and equivalent CLI commands. Do not repeatedly call other tools.
-Explain that `tldr setup` must run once, then the plugin host must restart.
+the status and configuration form. Do not repeatedly call other tools. Ask for
+any policy choice the user has not already provided, then call
+`configuration_setup` again with the selected provider, tool profile, and cloud
+permissions. Tell the user to restart the plugin host after it succeeds.
+
+Use the reported `plugin_uvx` command only when the MCP setup tool cannot be
+called. Do not assume a global `tldr` command exists.
 
 Model-backed calls have a bounded deadline and never initiate an Ollama model
 download. On `model_unavailable`, report the structured reason and use one of
@@ -43,7 +48,9 @@ The complete tool catalog is documented in `docs/TOOLS.md` in the marketplace
 repository. Direct specialist access requires a saved `full` profile:
 
 ```bash
-tldr setup --provider ollama --tool-profile full
+uvx --python 3.12 \
+  --from git+https://github.com/gitspoked/tldr.git@v0.1.4 \
+  tldr setup --provider ollama --tool-profile full
 ```
 
 After the host restarts, use MCP discovery or `repo://tooling` to see the exact

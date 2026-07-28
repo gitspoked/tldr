@@ -400,6 +400,16 @@ async def smoke(
                     raise RuntimeError("configuration_setup did not report setup_required")
                 if "configuration_form" not in setup_payload:
                     raise RuntimeError("configuration_setup did not return host form metadata")
+                commands = setup_payload.get("commands", {})
+                if commands.get("ollama") != "tldr setup --provider ollama":
+                    raise RuntimeError(
+                        "configuration_setup did not preserve the installed CLI setup command"
+                    )
+                plugin_uvx = commands.get("plugin_uvx", {})
+                if "uvx --python 3.12" not in plugin_uvx.get("ollama", ""):
+                    raise RuntimeError(
+                        "configuration_setup did not return a plugin-only uvx setup command"
+                    )
                 configured_result = await _call(
                     session,
                     SETUP_TOOL,

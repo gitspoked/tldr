@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -665,7 +666,18 @@ def lsp_symbols(path: str, query: str, root: str | None, limit: int):
 
 
 @main.command()
-@click.option("--fix", is_flag=True, help="Show install/start commands for non-OK checks.")
+@click.option(
+    "--fix",
+    is_flag=True,
+    help="Select install/start commands and write them to an executable script.",
+)
+@click.option(
+    "--fix-output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=Path("start.sh"),
+    show_default=True,
+    help="Script written by interactive --fix.",
+)
 @click.option(
     "--diagnostics",
     "diagnostics_path",
@@ -674,7 +686,13 @@ def lsp_symbols(path: str, query: str, root: str | None, limit: int):
 )
 @click.option("--line", type=int, help="1-based line for --diagnostics")
 @click.option("--column", type=int, help="1-based column for --diagnostics")
-def doctor(fix: bool, diagnostics_path: str | None, line: int | None, column: int | None):
+def doctor(
+    fix: bool,
+    fix_output: Path,
+    diagnostics_path: str | None,
+    line: int | None,
+    column: int | None,
+):
     """Check required runtime dependencies and optional local capabilities."""
     from .runtime import runtime_report
 
@@ -689,8 +707,9 @@ def doctor(fix: bool, diagnostics_path: str | None, line: int | None, column: in
         click.echo(f"{label}: {check['name']} [{check['category']}] - {check['details']}")
 
     fixable_checks = [check for check in report["checks"] if check["install_options"]]
+    fix_script = None
     if fix and fixable_checks:
-        _run_doctor_fix_flow(fixable_checks)
+        fix_script = _run_doctor_fix_flow(fixable_checks, output_path=fix_output)
     elif fixable_checks:
         click.echo()
         click.echo(
@@ -705,6 +724,10 @@ def doctor(fix: bool, diagnostics_path: str | None, line: int | None, column: in
         _render_diagnostics_report(diagnostics_here(diagnostics_path, line=line, column=column))
 
     if not report["ok"]:
+        if fix_script:
+            click.echo()
+            click.echo("Run the selected commands, then rerun `tldr doctor`.")
+            return
         raise click.ClickException("Runtime dependency check failed.")
 
 
@@ -881,8 +904,12 @@ def children_ignore(path: str, root: str, note: str | None):
     click.echo(f"IGNORED: {result['path']} - {describe_child(result)}")
 
 
-def _run_doctor_fix_flow(checks: list[dict[str, object]]):
-    """Render install/start guidance for non-OK checks."""
+def _run_doctor_fix_flow(
+    checks: list[dict[str, object]],
+    *,
+    output_path: Path = Path("start.sh"),
+) -> Path | None:
+    """Render install/start guidance and write selected commands to a script."""
 
     click.echo()
     click.echo("Install / start options:")
@@ -897,11 +924,11 @@ def _run_doctor_fix_flow(checks: list[dict[str, object]]):
     if not sys.stdin.isatty():
         click.echo()
         click.echo("Printed all available options because this session is non-interactive.")
-        return
+        return None
 
-    selected = _select_doctor_fix_items(checks)
+    selected = _select_doctor_fix_items(checks, script_name=output_path.name)
     if not selected:
-        return
+        return None
 
     click.echo()
     click.echo("Selected:")
@@ -909,6 +936,54 @@ def _run_doctor_fix_flow(checks: list[dict[str, object]]):
         click.echo(f"[x] {check['name']} [{check['category']}]")
         if check["install_options"]:
             click.echo(f"    {check['install_options'][0]['command']}")
+
+    script_path = _write_doctor_fix_script(selected, output_path=output_path)
+    run_path = str(output_path) if output_path.is_absolute() else f"./{output_path}"
+    click.echo()
+    click.echo(f"Wrote executable script: {script_path}")
+    click.echo(f"Run these commands individually or run {run_path} for faster start.")
+    return script_path
+
+
+def _write_doctor_fix_script(
+    checks: list[dict[str, object]],
+    *,
+    output_path: Path = Path("start.sh"),
+) -> Path:
+    """Write selected recommended commands to a reviewable executable script."""
+
+    target = output_path.expanduser().resolve()
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        "# Review these commands before running the script.",
+        f"cd {shlex.quote(str(Path.cwd().resolve()))}",
+    ]
+    for check in checks:
+        options = list(check.get("install_options", []))
+        if not options:
+            continue
+        label = f"{check.get('name', 'Dependency')} [{check.get('category', 'runtime')}]"
+        lines.extend(
+            [
+                "",
+                f"echo {shlex.quote(f'==> {label}')}",
+                str(options[0]["command"]),
+            ]
+        )
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target.open("x", encoding="utf-8") as script:
+            script.write("\n".join(lines) + "\n")
+    except FileExistsError as exc:
+        raise click.ClickException(
+            f"Refusing to overwrite existing script: {target}. "
+            "Choose another path with `--fix-output`."
+        ) from exc
+    target.chmod(0o755)
+    return target
 
 
 def _render_children_listing(result: dict) -> str:
@@ -967,7 +1042,11 @@ def _render_diagnostics_report(report: dict) -> None:
         click.echo(f"Fallbacks: {', '.join(fallback_used)}")
 
 
-def _select_doctor_fix_items(checks: list[dict[str, object]]) -> list[dict[str, object]]:
+def _select_doctor_fix_items(
+    checks: list[dict[str, object]],
+    *,
+    script_name: str = "start.sh",
+) -> list[dict[str, object]]:
     """Select fixable checks with a checkbox prompt."""
 
     questionary = _load_questionary()
@@ -979,7 +1058,7 @@ def _select_doctor_fix_items(checks: list[dict[str, object]]) -> list[dict[str, 
         choices.append(questionary.Choice(title=title, value=check))
 
     selected = questionary.checkbox(
-        "Select items to print again as a short checklist",
+        f"Select commands to add to {script_name}",
         choices=choices,
         qmark="",
         instruction="Use arrows, space to toggle, enter to confirm",

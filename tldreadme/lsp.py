@@ -102,7 +102,7 @@ class LspSession:
             "initialize",
             {
                 "processId": os.getpid(),
-                "clientInfo": {"name": "tldreadme", "version": "0.1.3"},
+                "clientInfo": {"name": "tldreadme", "version": "0.1.4"},
                 "rootUri": root.resolve().as_uri(),
                 "capabilities": {
                     "textDocument": {
