@@ -145,6 +145,24 @@ def test_peek_directory_no_manifest(tmp_path):
     assert result["project"] is None
 
 
+def test_peek_directory_does_not_widen_to_parent_project(tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"name": "workspace", "version": "1.0.0"}',
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("# Parent\n", encoding="utf-8")
+    property_root = tmp_path / "property"
+    property_root.mkdir()
+    (property_root / "README.md").write_text("# Property\n", encoding="utf-8")
+    (property_root / "main.py").write_text("def local(): pass\n", encoding="utf-8")
+
+    result = peek_target(property_root)
+
+    assert result["path"] == str(property_root.resolve())
+    assert result["project"] is None
+    assert [doc["title"] for doc in result["context_docs"]] == ["Property"]
+
+
 # ---------------------------------------------------------------------------
 # Task 5: Indexed knowledge (Layer 2)
 # ---------------------------------------------------------------------------
