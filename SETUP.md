@@ -120,13 +120,42 @@ choose another path.
 
 ## 4. Index a repository
 
+Use this sequence for the first index in each repository:
+
 ```bash
+tldr peek /path/to/project
+tldr setup --check
+tldr doctor
 tldr init /path/to/project
+tldr peek /path/to/project
 ```
 
 This parses supported source files, extracts dependencies, stores symbol
 embeddings in Qdrant, builds the FalkorDB graph, refreshes the hot index, and
 writes `.claude/TLDR.md` and `.claude/TLDR_CONTEXT.md`.
+
+The default Ollama embedding batch is 32. For a machine under memory pressure,
+start lower:
+
+```bash
+TLDREADME_EMBED_BATCH_SIZE=16 tldr init /path/to/project
+```
+
+`tldr init` does not need the Qwen chat model to parse source, build the local
+hot index, or generate context files. MxBAI is required for the default
+embedding stage. Qwen is used later for model-backed explanations and
+synthesis.
+
+Each embedding model has its own Qdrant collection. After a model change, run
+`tldr init` again for each repository that should be searchable with that
+model. A complete run removes stale vectors for that repository only. Cleanup
+starts after every new vector has been stored, so a partial embedding failure
+does not purge prior vectors.
+
+Qdrant and FalkorDB are optional enrichment backends during init. If either
+backend is unavailable, init reports a warning and still writes the local hot
+index and context files. Use `TLDREADME_DEBUG=1` only when a traceback is
+needed for development.
 
 Use the no-infrastructure path before indexing or when services are offline:
 

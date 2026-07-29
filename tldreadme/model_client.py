@@ -67,11 +67,11 @@ def model_timeout_seconds() -> float:
 def ollama_embed_batch_size() -> int:
     """Return a conservative Ollama batch size that avoids tokenizer crashes."""
 
-    raw = os.getenv("TLDREADME_EMBED_BATCH_SIZE", "128")
+    raw = os.getenv("TLDREADME_EMBED_BATCH_SIZE", "32")
     try:
         return max(1, min(128, int(raw)))
     except ValueError:
-        return 128
+        return 32
 
 
 def _run_with_deadline(operation: Callable[[], T], timeout_seconds: float) -> T:

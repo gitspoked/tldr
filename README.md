@@ -46,9 +46,12 @@ docker compose up -d
 
 TLDREADME never starts an Ollama download on behalf of a tool call.
 
-Index a repository and start the MCP server:
+Inspect the target, verify the runtime, then index the repository:
 
 ```bash
+.venv/bin/tldr peek /path/to/project
+.venv/bin/tldr setup --check
+.venv/bin/tldr doctor
 .venv/bin/tldr init /path/to/project
 .venv/bin/tldr serve
 ```
@@ -140,9 +143,10 @@ default is 15 seconds and can be changed with
 against `/api/tags` before inference, so a missing model is reported without
 triggering a pull.
 
-Ollama embedding requests are split into batches of at most 128 inputs to avoid
-overloading the local tokenizer. Lower the limit with
-`TLDREADME_EMBED_BATCH_SIZE` when running on constrained hardware.
+Ollama embedding requests use batches of 32 inputs by default to limit peak
+memory use. Set `TLDREADME_EMBED_BATCH_SIZE` to a value from 1 through 128.
+Values such as 8 or 16 trade speed for lower memory use on constrained
+hardware.
 
 LiteLLM and Qdrant credentials remain environment-managed. Set
 `QDRANT_API_KEY` when the configured Qdrant endpoint requires authentication.
@@ -154,6 +158,15 @@ provider access and are not reusable as LiteLLM credentials.
 `tldr init` keeps parsing and writes local context files when Qdrant or
 FalkorDB is unavailable. It reports each skipped backend as a warning. Set
 `TLDREADME_DEBUG=1` when a full traceback is needed.
+
+Embedding models use separate Qdrant collections. Changing from Nomic to MxBAI,
+or selecting another embedding model, preserves the old collection and avoids
+mixing incompatible vector spaces. Run `tldr init PATH` once with the new model
+to build its index.
+
+A successful full init marks the current repository's new vectors before
+removing its stale vectors. If embedding stops partway through, the cleanup
+does not run, so prior vectors are not purged.
 
 ## Main commands
 
@@ -178,7 +191,8 @@ tldr audit all --dry-run           # preview local scanner selection
 ## Repository scope
 
 Indexed queries stay inside one repository unless cross-repository search is
-requested.
+requested explicitly. The presence of a system-wide index does not widen the
+task boundary.
 
 ```bash
 tldr ask -d PATH "question"
@@ -194,9 +208,10 @@ tldr whats-next PATH --cross-repository-ideas
 ```
 
 That option adds external matches under `shared_code_evidence`. The task scope
-remains the selected repository. New indexes store a canonical repository root
-with each vector. Older indexes are filtered by file path until they are
-indexed again.
+remains the selected repository. External plans, tasks, roadmap items, and
+next-action candidates are never imported. New indexes store a canonical
+repository root with each vector. Older indexes are filtered by file path until
+they are indexed again.
 
 ## Architecture
 

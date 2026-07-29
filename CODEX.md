@@ -27,6 +27,9 @@ If the local stack is needed:
 
 ```bash
 docker compose up -d
+.venv/bin/tldr peek .
+.venv/bin/tldr setup --check
+.venv/bin/tldr doctor
 .venv/bin/tldr init .
 ```
 
@@ -40,6 +43,11 @@ Treat this four-tool MCP surface as stable:
 - `verify_change`
 
 New agent-facing behavior should extend one of those tools or remain in the `full` specialist profile.
+
+Keep every router call attached to one repository root. System-wide indexed
+symbols do not widen the default task boundary. Cross-repository code is
+allowed only after explicit opt-in and only as comparison or idea evidence.
+Never import external tasks, plans, roadmap items, or next actions.
 
 Preserve the normalized top-level payload fields:
 
@@ -74,5 +82,7 @@ Use this order when the repo contains conflicting guidance:
 
 - Prefer extending existing modules over creating parallel abstractions.
 - Keep router-default surface small.
+- Keep full init memory-bounded and do not purge prior repository vectors when
+  a model or backend fails partway through.
 - Update tests with behavior changes, especially `tests/test_mcp_server.py`, `tests/test_coding_tools.py`, and `tests/test_parser.py`.
 - Do not treat `.claude/` output as source of truth; it is generated context.

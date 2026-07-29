@@ -175,6 +175,7 @@ def test_run_init_resolves_relative_root_before_indexing(monkeypatch, tmp_path):
 
     resolved_repo = repo.resolve()
     parse_calls: list[Path] = []
+    embed_calls: list[tuple[list[object], dict[str, object]]] = []
     hot_index_calls: list[Path] = []
     generate_calls: list[Path] = []
 
@@ -188,7 +189,8 @@ def test_run_init_resolves_relative_root_before_indexing(monkeypatch, tmp_path):
     fake_results = [FakeResult()]
 
     class FakeEmbedder:
-        def index_chunks(self, _chunks):
+        def index_chunks(self, chunks, **kwargs):
+            embed_calls.append((chunks, kwargs))
             return None
 
     class FakeGrapher:
@@ -228,6 +230,15 @@ def test_run_init_resolves_relative_root_before_indexing(monkeypatch, tmp_path):
     pipeline.run_init(Path("."), output_dir=".claude")
 
     assert parse_calls == [resolved_repo]
+    assert embed_calls == [
+        (
+            fake_results,
+            {
+                "replace_repository": True,
+                "repo_root": resolved_repo,
+            },
+        )
+    ]
     assert hot_index_calls == [resolved_repo]
     assert generate_calls == [resolved_repo]
 
@@ -243,7 +254,7 @@ def test_run_init_continues_after_optional_backend_failures(monkeypatch, tmp_pat
         line_count = 1
 
     class FailingEmbedder:
-        def index_chunks(self, _chunks):
+        def index_chunks(self, _chunks, **_kwargs):
             raise RuntimeError("embedding backend offline")
 
     class FailingGrapher:

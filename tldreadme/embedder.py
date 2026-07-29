@@ -1,6 +1,8 @@
 """Embed code chunks and store them in Qdrant."""
 
 import hashlib
+import re
+import uuid
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +14,17 @@ from .model_client import ModelClient
 from .parser import ParseResult
 
 COLLECTION = "tldreadme_code"
+
+
+def collection_name_for_model(model: str) -> str:
+    """Keep incompatible embedding models in separate Qdrant collections."""
+
+    normalized = model.removeprefix("ollama/").removesuffix(":latest").strip().lower()
+    if normalized == "nomic-embed-text":
+        return COLLECTION
+    slug = re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")[:32] or "model"
+    digest = hashlib.sha256(normalized.encode()).hexdigest()[:8]
+    return f"{COLLECTION}_{slug}_{digest}"
 
 
 def _qdrant_client_cls():
@@ -27,6 +40,7 @@ def _qdrant_models():
         "Distance": load_attr("qdrant_client.models", "Distance"),
         "FieldCondition": load_attr("qdrant_client.models", "FieldCondition"),
         "Filter": load_attr("qdrant_client.models", "Filter"),
+        "FilterSelector": load_attr("qdrant_client.models", "FilterSelector"),
         "MatchValue": load_attr("qdrant_client.models", "MatchValue"),
         "VectorParams": load_attr("qdrant_client.models", "VectorParams"),
         "PointStruct": load_attr("qdrant_client.models", "PointStruct"),
@@ -117,8 +131,11 @@ def embed_batch(texts: list[str], **_kwargs) -> list[list[float]]:
 class CodeEmbedder:
     """Manages embedding storage in Qdrant."""
 
-    def __init__(self, qdrant_url: str = None):
+    def __init__(self, qdrant_url: str = None, collection_name: str = None):
         resolved_url = qdrant_url or get_setting("QDRANT_URL")
+        self.collection_name = collection_name or collection_name_for_model(
+            get_setting("TLDREADME_EMBED_MODEL")
+        )
         client_kwargs: dict[str, object] = {
             "url": resolved_url,
             "check_compatibility": False,
@@ -140,26 +157,45 @@ class CodeEmbedder:
 
     def _ensure_collection(self):
         collections = [c.name for c in self.client.get_collections().collections]
-        if COLLECTION not in collections:
+        if self.collection_name not in collections:
             # Dimension depends on model - mxbai = 1024, OpenAI commonly = 1536
             # We'll detect on first embed
             self._collection_created = False
         else:
             self._collection_created = True
 
-    def index_chunks(self, chunks: list[CodeChunk], slice_size: int = 500):
+    def index_chunks(
+        self,
+        chunks: list[CodeChunk],
+        slice_size: int = 500,
+        *,
+        replace_repository: bool = False,
+        repo_root: str | Path | None = None,
+    ):
         """Embed and store chunks in memory-safe slices.
 
         Processing 190K+ symbols in one shot exhausts RAM.  This streams
-        slices of ``slice_size`` chunks: embed → upsert → free → next.
+        slices of ``slice_size`` chunks. A full repository refresh marks every
+        new point, then removes stale points only after all upserts succeed.
         """
+
+        resolved_repo_root = (
+            str(Path(repo_root).resolve())
+            if repo_root is not None
+            else next((chunk.repo_root for chunk in chunks if chunk.repo_root), "")
+        )
+        if replace_repository and not resolved_repo_root:
+            raise ValueError("A repository root is required when replacing an index.")
         if not chunks:
+            if replace_repository and self._collection_created:
+                self._remove_repository_points(resolved_repo_root)
             return
 
         import sys
 
         point_struct = _qdrant_models()["PointStruct"]
         total = len(chunks)
+        index_run = uuid.uuid4().hex if replace_repository else ""
 
         for start in range(0, total, slice_size):
             end = min(start + slice_size, total)
@@ -173,7 +209,7 @@ class CodeEmbedder:
             if not self._collection_created:
                 models = _qdrant_models()
                 self.client.create_collection(
-                    collection_name=COLLECTION,
+                    collection_name=self.collection_name,
                     vectors_config=models["VectorParams"](
                         size=len(vectors[0]), distance=models["Distance"].COSINE
                     ),
@@ -196,17 +232,55 @@ class CodeEmbedder:
                         "line": chunk.line,
                         "end_line": chunk.end_line,
                         "repo_root": chunk.repo_root,
+                        "index_run": index_run,
                     },
                 )
                 for chunk, vector in zip(batch_chunks, vectors)
             ]
-            self.client.upsert(collection_name=COLLECTION, points=points)
+            self.client.upsert(collection_name=self.collection_name, points=points)
 
             if end % 2000 == 0 or end == total:
                 print(
                     f"  embedded {end}/{total} chunks",
                     file=sys.stderr,
                 )
+
+        if replace_repository:
+            self._remove_repository_points(
+                resolved_repo_root,
+                keep_index_run=index_run,
+            )
+
+    def _remove_repository_points(
+        self,
+        repo_root: str,
+        *,
+        keep_index_run: str | None = None,
+    ) -> None:
+        """Remove stale derived vectors for one repository."""
+
+        models = _qdrant_models()
+        must = [
+            models["FieldCondition"](
+                key="repo_root",
+                match=models["MatchValue"](value=repo_root),
+            )
+        ]
+        must_not = []
+        if keep_index_run:
+            must_not.append(
+                models["FieldCondition"](
+                    key="index_run",
+                    match=models["MatchValue"](value=keep_index_run),
+                )
+            )
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models["FilterSelector"](
+                filter=models["Filter"](must=must, must_not=must_not)
+            ),
+            wait=True,
+        )
 
     def search_similar(
         self,
@@ -233,7 +307,7 @@ class CodeEmbedder:
                 ]
             )
         results = self.client.query_points(
-            collection_name=COLLECTION,
+            collection_name=self.collection_name,
             query=query_vector,
             query_filter=query_filter,
             limit=limit,
@@ -244,7 +318,7 @@ class CodeEmbedder:
         # wider global candidate set, then fail closed by absolute file path.
         if not cross_repository and not points and resolved_root is not None:
             legacy_results = self.client.query_points(
-                collection_name=COLLECTION,
+                collection_name=self.collection_name,
                 query=query_vector,
                 query_filter=None,
                 limit=max(50, limit * 5),

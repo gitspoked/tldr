@@ -35,13 +35,14 @@ tldr peek /path/to/code            # same as above (explicit subcommand)
 tldr peek /path/to/file.py         # peek at a single file
 tldr peek /path --json-output      # raw JSON for piping or agent consumption
 tldr peek /path --markdown         # markdown output for embedding
+tldr setup --check                 # inspect saved setup without service probes
+tldr doctor                        # check runtime, services, LSP servers
 tldr init /path/to/code           # full pipeline: parse -> embed -> graph -> generate
 tldr serve                         # MCP server (stdio, router profile)
 tldr serve --transport sse -p 8900 # MCP server over SSE
 tldr serve --tool-profile full     # expose all specialist tools
 tldr watch /path/to/code           # incremental re-index on file saves
 tldr ask "question"                # RAG-powered CLI answer
-tldr doctor                        # check runtime, services, LSP servers
 tldr doctor --fix                  # interactive fix for missing dependencies
 tldr doctor --diagnostics path/to/file.py --line 42  # LSP diagnostics report
 tldr summary                       # what changed since last checkpoint
@@ -85,7 +86,7 @@ Source files
   → deps.py (manifest dependency extraction)
   → context_docs.py (README/CLAUDE/CODEX/GEMINI/AGENTS scanners)
   → model_client.py (bounded Ollama or LiteLLM HTTP requests)
-  → embedder.py (embedding → Qdrant collection "tldreadme_code")
+  → embedder.py (embedding → model-specific Qdrant collection)
   → grapher.py (FalkorDB graph "tldreadme" with Symbol/File/Module/Import nodes)
   → hot_index.py (top 100 symbols cached → .tldr/hot_index.json)
   → generator.py (LLM synthesis → .claude/TLDR.md + TLDR_CONTEXT.md)
@@ -103,7 +104,7 @@ Source files
 - **asts.py** - Tree-sitter AST extraction. Produces `ParseResult`, `Symbol`, `Import`, and `CallSite` dataclasses.
 - **deps.py** - Manifest dependency extraction from Cargo.toml, package.json, go.mod, pyproject.toml, and requirements.txt.
 - **context_docs.py** - Scans CLAUDE.md, CODEX.md, README.md, AGENTS.md, GEMINI.md, TLDROADMAP.md, TLDRNOTES.md, `.tldr/roadmap/TLDRPLANS.md`, and related project docs into structured sections.
-- **embedder.py** - `CodeEmbedder` class wrapping Qdrant. `embed_batch()` for bulk, `embed_text()` for single queries. Collection auto-creates on first use with dimension auto-detection.
+- **embedder.py** - `CodeEmbedder` class wrapping Qdrant. `embed_batch()` handles bulk requests and `embed_text()` handles single queries. Each embedding model uses its own collection. A successful full refresh removes stale repository vectors only after every current vector has been stored.
 - **grapher.py** - `CodeGrapher` class wrapping FalkorDB (Redis protocol). Query methods: `get_callers`, `get_callees`, `get_module_symbols`, `get_flow`, `get_dependents`.
 - **chains.py** - Composed tool sequences: `know` (hot index → rg → optional graph), `impact` (rg counts → optional graph dependents → severity), `discover` (rg + semantic merge), and `explain` (retrieval → synthesis).
 - **mcp_server.py** - MCP tool/resource/prompt surface with router/full profiles. Capability-filters tools at runtime (suppresses tools when backends like LSP/Qdrant/FalkorDB are unavailable). Supports stdio (Claude Code) and SSE (remote clients) transports.
@@ -125,9 +126,11 @@ Source files
 
 - **Model routing**: `model_client.py` resolves provider settings for every call. A non-empty `LITELLM_URL` selects the OpenAI-compatible proxy; otherwise it uses Ollama's native API at `OLLAMA_URL`.
 - **Bounded inference**: provider calls default to a 15-second hard deadline through `TLDREADME_MODEL_TIMEOUT_SECONDS`. Direct Ollama calls preflight `/api/tags` and never pull models.
+- **Memory-bounded embeddings**: direct Ollama embedding requests use 32 inputs by default and accept `TLDREADME_EMBED_BATCH_SIZE` values from 1 through 128.
 - **Ports**: both compose files use standard ports by default - Qdrant `6333`, FalkorDB `6379`.
 - **Singleton connections**: `_shared.py` provides `get_embedder()` / `get_grapher()` - one Qdrant/FalkorDB connection per process.
-- **Deterministic Qdrant IDs**: `chunk_id()` hashes `file:name:line` into a stable integer. Re-indexing upserts in place.
+- **Qdrant refresh safety**: `chunk_id()` hashes `file:name:line` into a stable integer. Full init marks the current run, upserts in place, and removes stale vectors for that repository only after all batches succeed.
+- **Repository boundary**: indexed lookup and planning stay local by default. Cross-repository code is opt-in evidence and never imports external work items.
 - **MCP tool profiles**: `router` (default) exposes four intent-based tools (`repo_next_action`, `repo_lookup`, `change_plan`, `verify_change`). `full` adds specialist tools for debugging. New agent-facing behavior should extend one of the four router tools or stay in `full`.
 - **Graph schema**: `(Module)-[:CONTAINS]->(File)-[:DEFINES]->(Symbol)`, `(Symbol)-[:CALLS]->(Symbol)`, `(File)-[:IMPORTS]->(Import)`.
 - **tree-sitter pinning**: `tree-sitter==0.21.3` and `tree-sitter-languages==1.10.2` are pinned - newer versions break compatibility.
@@ -154,7 +157,7 @@ Full-profile audit tools: `audit_run` (execute scan by category), `audit_profile
 | `TLDREADME_EMBED_MODEL` | `ollama/mxbai-embed-large` | Embedding model |
 | `TLDREADME_CHAT_MODEL` | `ollama/qwen2.5-coder:3b-instruct` | Chat/synthesis model |
 | `TLDREADME_MODEL_TIMEOUT_SECONDS` | `15` | Provider request wall-clock deadline |
-| `TLDREADME_EMBED_BATCH_SIZE` | `128` | Maximum inputs per Ollama embedding request |
+| `TLDREADME_EMBED_BATCH_SIZE` | `32` | Maximum inputs per Ollama embedding request |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant vector DB |
 | `QDRANT_API_KEY` | `""` | Optional API key for authenticated Qdrant; environment only |
 | `FALKORDB_URL` | `redis://localhost:6379` | FalkorDB graph DB |

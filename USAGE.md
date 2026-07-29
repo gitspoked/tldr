@@ -16,11 +16,21 @@ existing local index. It does not require a model or database.
 For semantic search, graph traversal, and generated summaries:
 
 ```bash
+tldr setup --check
+tldr doctor
 tldr init /path/to/project
 tldr watch /path/to/project
 ```
 
 Run `tldr setup` and `tldr doctor` before the first indexed workflow.
+The default embedding batch is 32. Use
+`TLDREADME_EMBED_BATCH_SIZE=16 tldr init /path/to/project` when lower peak
+memory matters more than indexing speed.
+
+Run `tldr init` again to recenter an existing repository after changing the
+embedding model or after broad symbol movement. Embedding models use separate
+Qdrant collections. A successful full run removes stale vectors from the
+selected repository only, after all current vectors have been stored.
 
 ## Default MCP workflow
 
@@ -101,7 +111,8 @@ shared code while forming ideas, opt in:
 tldr whats-next . --cross-repository-ideas
 ```
 
-External matches are returned as evidence. They do not become local tasks.
+External matches are returned as evidence. They do not become local tasks,
+plans, roadmap entries, or next actions.
 
 The full MCP profile also exposes file-backed plan, task, and session tools.
 Their state lives under `.tldr/work/`, so interrupted work can be resumed
