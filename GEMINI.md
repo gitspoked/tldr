@@ -21,7 +21,7 @@ tldr doctor
 For the default local stack:
 
 ```bash
-ollama pull nomic-embed-text
+ollama pull mxbai-embed-large
 ollama pull qwen2.5-coder:3b-instruct
 docker compose up -d
 ```
@@ -34,6 +34,8 @@ readiness errors on missing models, failed requests, or timeouts.
 
 ```bash
 tldr peek PATH
+tldr setup --check
+tldr doctor
 tldr init PATH
 tldr watch PATH
 tldr serve
@@ -42,6 +44,15 @@ tldr ask "question"
 tldr summary
 tldr audit all --dry-run
 ```
+
+Use that `peek`, setup check, doctor, init order for the first full index in a
+repository. The default embedding batch is 32. Set
+`TLDREADME_EMBED_BATCH_SIZE=16` when lower peak memory is more important than
+indexing speed.
+
+Repository planning stays inside the selected repository. Cross-repository
+code comparison is opt-in and may contribute shared-code evidence only.
+External tasks, plans, roadmap items, and next actions are never imported.
 
 ## Stable MCP contract
 

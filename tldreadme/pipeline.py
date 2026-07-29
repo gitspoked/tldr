@@ -53,7 +53,11 @@ def run_init(directory: Path, output_dir: str = ".claude"):
     chunks = symbols_to_chunks(results, repo_root=directory)
     try:
         embedder = CodeEmbedder()
-        embedder.index_chunks(chunks)
+        embedder.index_chunks(
+            chunks,
+            replace_repository=True,
+            repo_root=directory,
+        )
         console.print(f"  Embedded [bold]{len(chunks)}[/] code chunks\n")
     except Exception as exc:
         warnings.append(_stage_failure("Qdrant embedding", exc))

@@ -7,11 +7,14 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from tldreadme import embedder
 from tldreadme.embedder import (
     CodeChunk,
     _chunk_id_to_int,
     chunk_id,
+    collection_name_for_model,
     symbols_to_chunks,
 )
 from tldreadme.parser import parse_file
@@ -57,6 +60,17 @@ def test_chunk_id_to_int_unique():
     id1 = _chunk_id_to_int(chunk_id("a.py", "x", 1))
     id2 = _chunk_id_to_int(chunk_id("a.py", "y", 1))
     assert id1 != id2
+
+
+def test_collection_name_separates_embedding_models():
+    assert collection_name_for_model("ollama/nomic-embed-text") == "tldreadme_code"
+    assert collection_name_for_model("nomic-embed-text:latest") == "tldreadme_code"
+    assert collection_name_for_model("ollama/mxbai-embed-large").startswith(
+        "tldreadme_code_mxbai_embed_large_"
+    )
+    assert collection_name_for_model("ollama/mxbai-embed-large") != collection_name_for_model(
+        "ollama/qwen3-embedding"
+    )
 
 
 # ── Symbols to Chunks ────────────────────────────────────────────
@@ -203,6 +217,7 @@ def test_search_similar_is_repository_scoped_by_default(monkeypatch, tmp_path):
     )
     code_embedder = object.__new__(embedder.CodeEmbedder)
     code_embedder.client = FakeClient()
+    code_embedder.collection_name = "tldreadme_code_test"
 
     results = code_embedder.search_similar("sample", repo_root=tmp_path)
 
@@ -228,6 +243,7 @@ def test_search_similar_cross_repository_requires_explicit_opt_in(monkeypatch):
     monkeypatch.setattr(embedder, "embed_text", lambda _query: [0.1, 0.2])
     code_embedder = object.__new__(embedder.CodeEmbedder)
     code_embedder.client = FakeClient()
+    code_embedder.collection_name = "tldreadme_code_test"
 
     code_embedder.search_similar("shared pattern", cross_repository=True)
 
@@ -272,8 +288,160 @@ def test_search_similar_legacy_fallback_filters_out_other_repositories(monkeypat
     )
     code_embedder = object.__new__(embedder.CodeEmbedder)
     code_embedder.client = FakeClient()
+    code_embedder.collection_name = "tldreadme_code_test"
 
     results = code_embedder.search_similar("sample", repo_root=tmp_path)
 
     assert len(calls) == 2
     assert [item["symbol_name"] for item in results] == ["local"]
+
+
+def test_full_repository_index_removes_stale_points_after_success(monkeypatch, tmp_path):
+    upserts = []
+    deletes = []
+
+    class FakeClient:
+        def upsert(self, **kwargs):
+            upserts.append(kwargs)
+
+        def delete(self, **kwargs):
+            deletes.append(kwargs)
+
+    def model_factory(**kwargs):
+        return kwargs
+
+    monkeypatch.setattr(
+        embedder,
+        "_qdrant_models",
+        lambda: {
+            "FieldCondition": model_factory,
+            "Filter": model_factory,
+            "FilterSelector": model_factory,
+            "MatchValue": model_factory,
+            "PointStruct": model_factory,
+        },
+    )
+    monkeypatch.setattr(
+        embedder,
+        "embed_batch",
+        lambda texts, **_kwargs: [[0.1, 0.2] for _text in texts],
+    )
+    repo_root = str(tmp_path.resolve())
+    chunks = [
+        CodeChunk(
+            id="0000000000000001",
+            file=str(tmp_path / "sample.py"),
+            symbol_name="sample",
+            kind="function",
+            language="python",
+            content="def sample(): pass",
+            signature="def sample():",
+            context="file: sample.py",
+            line=1,
+            end_line=1,
+            repo_root=repo_root,
+        )
+    ]
+    code_embedder = object.__new__(embedder.CodeEmbedder)
+    code_embedder.client = FakeClient()
+    code_embedder.collection_name = "tldreadme_code_test"
+    code_embedder._collection_created = True
+
+    code_embedder.index_chunks(
+        chunks,
+        replace_repository=True,
+        repo_root=tmp_path,
+    )
+
+    assert len(upserts) == 1
+    assert len(deletes) == 1
+    index_run = upserts[0]["points"][0]["payload"]["index_run"]
+    assert index_run
+    assert deletes[0] == {
+        "collection_name": "tldreadme_code_test",
+        "points_selector": {
+            "filter": {
+                "must": [
+                    {
+                        "key": "repo_root",
+                        "match": {"value": repo_root},
+                    }
+                ],
+                "must_not": [
+                    {
+                        "key": "index_run",
+                        "match": {"value": index_run},
+                    }
+                ],
+            }
+        },
+        "wait": True,
+    }
+
+
+def test_full_repository_index_keeps_old_points_when_embedding_fails(monkeypatch, tmp_path):
+    upserts = []
+    deletes = []
+    embed_calls = 0
+
+    class FakeClient:
+        def upsert(self, **kwargs):
+            upserts.append(kwargs)
+
+        def delete(self, **kwargs):
+            deletes.append(kwargs)
+
+    def model_factory(**kwargs):
+        return kwargs
+
+    def fake_embed(texts, **_kwargs):
+        nonlocal embed_calls
+        embed_calls += 1
+        if embed_calls == 2:
+            raise RuntimeError("provider stopped")
+        return [[0.1, 0.2] for _text in texts]
+
+    monkeypatch.setattr(
+        embedder,
+        "_qdrant_models",
+        lambda: {
+            "FieldCondition": model_factory,
+            "Filter": model_factory,
+            "FilterSelector": model_factory,
+            "MatchValue": model_factory,
+            "PointStruct": model_factory,
+        },
+    )
+    monkeypatch.setattr(embedder, "embed_batch", fake_embed)
+    repo_root = str(tmp_path.resolve())
+    chunks = [
+        CodeChunk(
+            id=f"{index + 1:016x}",
+            file=str(tmp_path / f"sample_{index}.py"),
+            symbol_name=f"sample_{index}",
+            kind="function",
+            language="python",
+            content=f"def sample_{index}(): pass",
+            signature=f"def sample_{index}():",
+            context=f"file: sample_{index}.py",
+            line=1,
+            end_line=1,
+            repo_root=repo_root,
+        )
+        for index in range(2)
+    ]
+    code_embedder = object.__new__(embedder.CodeEmbedder)
+    code_embedder.client = FakeClient()
+    code_embedder.collection_name = "tldreadme_code_test"
+    code_embedder._collection_created = True
+
+    with pytest.raises(RuntimeError, match="provider stopped"):
+        code_embedder.index_chunks(
+            chunks,
+            slice_size=1,
+            replace_repository=True,
+            repo_root=tmp_path,
+        )
+
+    assert len(upserts) == 1
+    assert deletes == []

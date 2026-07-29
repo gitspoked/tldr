@@ -14,6 +14,7 @@ from tldreadme.model_client import (
     ModelClient,
     ModelUnavailableError,
     ProviderSettings,
+    ollama_embed_batch_size,
 )
 
 
@@ -135,6 +136,12 @@ def test_ollama_embedding_splits_large_requests_into_bounded_batches(monkeypatch
     assert len(vectors) == len(texts)
     assert len(embed_requests) == 2
     assert all(len(request["body"]["input"]) == 128 for request in embed_requests)
+
+
+def test_ollama_embedding_defaults_to_memory_safe_batches(monkeypatch):
+    monkeypatch.delenv("TLDREADME_EMBED_BATCH_SIZE", raising=False)
+
+    assert ollama_embed_batch_size() == 32
 
 
 def test_slow_ollama_completion_returns_within_wall_clock_deadline():

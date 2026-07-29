@@ -10,6 +10,11 @@ The bundled MCP server uses the smaller router-first tool surface:
 - `change_plan`
 - `verify_change`
 
+Repository lookup and planning stay inside the selected repository by default.
+Cross-repository code is available only when explicitly requested for
+comparison or shared-code evidence. External plans and tasks never enter the
+selected repository's next-action list.
+
 ## Runtime requirement
 
 Install [`uv`](https://docs.astral.sh/uv/) so the plugin can launch the pinned
@@ -20,6 +25,12 @@ returns the choices needed to finish configuration. Call that tool again with
 the selected provider and inference policy, then restart the host. A global
 `tldr` install is not required. Model calls never start an Ollama download;
 slow providers return a bounded readiness error.
+
+For the first full index in a repository, use `tldr peek PATH`,
+`tldr setup --check`, and `tldr doctor` before `tldr init PATH`. The default
+Ollama models are `mxbai-embed-large` for embeddings and
+`qwen2.5-coder:3b-instruct` for model-backed synthesis. TLDREADME never
+downloads either model automatically.
 
 Manual plugin-only fallback:
 
