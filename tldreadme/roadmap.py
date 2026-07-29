@@ -509,8 +509,12 @@ def capture_plan_input(text: str, *, root: str | Path = ".") -> dict:
     }
 
 
-def whats_next_vibe(root: str | Path = ".") -> dict:
-    """Return a strategic roadmap snapshot for humans."""
+def whats_next_vibe(
+    root: str | Path = ".",
+    *,
+    cross_repository_ideas: bool = False,
+) -> dict:
+    """Return local next steps with optional shared-code idea evidence."""
 
     from .children import list_children
     from .coding_tools import repo_lookup, repo_next_action
@@ -519,7 +523,10 @@ def whats_next_vibe(root: str | Path = ".") -> dict:
 
     repo_root = _repo_root(root)
     plans = build_tldrplans(repo_root, write=False)
-    goals = suggest_goals(str(repo_root))
+    goal_kwargs = {}
+    if cross_repository_ideas:
+        goal_kwargs["cross_repository_ideas"] = True
+    goals = suggest_goals(str(repo_root), **goal_kwargs)
     top_goal = goals.get("top_goal")
     question = best_question(top_goal, path=str(repo_root)) if top_goal else {}
     lookup = (
@@ -548,10 +555,12 @@ def whats_next_vibe(root: str | Path = ".") -> dict:
     return {
         "project": repo_root.name,
         "project_intent": _intent_text(repo_root),
+        "scope_policy": goals.get("scope_policy"),
         "strategic_question": question.get("best_question"),
         "question_answer": question.get("answer"),
         "top_goal": top_goal,
         "next_options": goals.get("candidate_goals", [])[:3],
+        "shared_code_evidence": goals.get("shared_code_evidence", []),
         "recommended_next_action": next_action.get("recommended_next_action")
         or goals.get("recommended_next_action"),
         "next_tool": next_action.get("suggested_tool"),
@@ -622,6 +631,15 @@ def render_whats_next_vibe(payload: dict) -> str:
         for candidate in options:
             files = ", ".join(candidate.get("files", [])[:3]) or "(scope pending)"
             lines.append(f"- {candidate['title']} - {candidate['why_now']} Files: {files}")
+
+    shared_code_evidence = payload.get("shared_code_evidence") or []
+    if shared_code_evidence:
+        lines.append("")
+        lines.append("Shared-code idea evidence (explicit opt-in):")
+        for item in shared_code_evidence[:5]:
+            lines.append(
+                f"- {item.get('symbol') or '(anonymous)'} - {item.get('file')}:{item.get('line')}"
+            )
     lines.append("")
 
     lines.append(f"Recommended next action: {payload.get('recommended_next_action')}")
@@ -747,12 +765,20 @@ def render_current_vibe_roadmap(payload: dict) -> str:
     return _wrap_roadmap_document(human_owned, "\n".join(auto_lines).strip())
 
 
-def build_current_vibe_roadmap(root: str | Path = ".", *, write: bool = False) -> dict:
+def build_current_vibe_roadmap(
+    root: str | Path = ".",
+    *,
+    write: bool = False,
+    cross_repository_ideas: bool = False,
+) -> dict:
     """Build the current roadmap snapshot and optionally write TLDROADMAP.md."""
 
     repo_root = _repo_root(root)
     plans = build_tldrplans(repo_root, write=write)
-    payload = whats_next_vibe(repo_root)
+    payload = whats_next_vibe(
+        repo_root,
+        cross_repository_ideas=cross_repository_ideas,
+    )
     payload["planning_inputs"]["plans_path"] = plans["path"]
     payload["human_owned"] = _preserved_human_owned_roadmap(repo_root)
     markdown = render_current_vibe_roadmap(payload)

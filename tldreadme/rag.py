@@ -94,6 +94,22 @@ def _display_path(path: str, repo_root: Path) -> str:
         return path
 
 
+def _path_is_within(path: str, repo_root: Path) -> bool:
+    """Return whether a result path belongs to the requested repository."""
+
+    try:
+        Path(path).resolve().relative_to(repo_root)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _repository_hits(hits: list[dict], repo_root: Path) -> list[dict]:
+    """Fail closed on graph or vector results from outside one repository."""
+
+    return [hit for hit in hits if _path_is_within(str(hit.get("file", "")), repo_root)]
+
+
 def _read_repo_text(repo_root: Path, relative_path: str) -> str:
     """Read a repo-relative file when present."""
 
@@ -258,6 +274,8 @@ def _feature_gap_candidates(snapshot: dict, repo_root: Path) -> list[dict]:
     """Return grounded feature-gap candidates from repo code and docs."""
 
     candidates: list[dict] = []
+    cli_path = repo_root / "tldreadme/cli.py"
+    watcher_path = repo_root / "tldreadme/watcher.py"
     cli_text = _read_repo_text(repo_root, "tldreadme/cli.py")
     watcher_text = _read_repo_text(repo_root, "tldreadme/watcher.py")
     readme_text = _read_repo_text(repo_root, "README.md")
@@ -267,7 +285,7 @@ def _feature_gap_candidates(snapshot: dict, repo_root: Path) -> list[dict]:
         for token in ("audit", "semgrep", "pip-audit", "gitleaks", "garak")
     )
 
-    if "def audit(" not in cli_text:
+    if cli_path.is_file() and "def audit(" not in cli_text:
         evidence = [
             "CLI exposes doctor/summary/children but no audit command.",
             "No tracked `tldreadme/audit.py` module exists yet.",
@@ -295,7 +313,7 @@ def _feature_gap_candidates(snapshot: dict, repo_root: Path) -> list[dict]:
             )
         )
 
-    if "generate_claude_md" not in watcher_text:
+    if watcher_path.is_file() and "generate_claude_md" not in watcher_text:
         candidates.append(
             _goal_candidate(
                 candidate_id="watcher-context-regeneration",
@@ -357,14 +375,25 @@ def _format_goal_candidates(candidates: list[dict], repo_root: Path) -> str:
     return "\n".join(lines).strip()
 
 
-def ask_question(question: str, scope: str | None = None) -> str:
-    """Full RAG pipeline: retrieve relevant code, synthesize answer."""
+def ask_question(
+    question: str,
+    scope: str | None = None,
+    *,
+    cross_repository: bool = False,
+) -> str:
+    """Retrieve and synthesize locally unless global search is explicit."""
 
     embedder = get_embedder()
     grapher = get_grapher()
+    repo_root = _repo_root(scope)
 
     # 1. Semantic retrieval from Qdrant
-    similar_chunks = embedder.search_similar(question, limit=10)
+    similar_chunks = embedder.search_similar(
+        question,
+        limit=10,
+        repo_root=repo_root,
+        cross_repository=cross_repository,
+    )
 
     # 2. Graph retrieval - if question mentions a symbol, get its neighborhood
     graph_context = []
@@ -373,6 +402,9 @@ def ask_question(question: str, scope: str | None = None) -> str:
         if name:
             callers = grapher.get_callers(name)
             callees = grapher.get_callees(name)
+            if not cross_repository:
+                callers = _repository_hits(callers, repo_root)
+                callees = _repository_hits(callees, repo_root)
             graph_context.append(
                 {
                     "symbol": name,
@@ -388,10 +420,22 @@ def ask_question(question: str, scope: str | None = None) -> str:
     return _synthesize(question, context)
 
 
-def read_similar(query: str, limit: int = 5) -> list[dict]:
-    """Return actual code bodies of semantically similar symbols."""
+def read_similar(
+    query: str,
+    limit: int = 5,
+    *,
+    root: str | None = None,
+    cross_repository: bool = False,
+) -> list[dict]:
+    """Return similar code, repository-local unless explicitly global."""
+
     embedder = get_embedder()
-    results = embedder.search_similar(query, limit=limit)
+    results = embedder.search_similar(
+        query,
+        limit=limit,
+        repo_root=_repo_root(root),
+        cross_repository=cross_repository,
+    )
     # Return full code content, not just metadata
     return [
         {
@@ -407,13 +451,25 @@ def read_similar(query: str, limit: int = 5) -> list[dict]:
     ]
 
 
-def read_symbol(name: str) -> dict | None:
-    """Return everything known about a symbol: body, callers, callees, context."""
+def read_symbol(
+    name: str,
+    *,
+    root: str | None = None,
+    cross_repository: bool = False,
+) -> dict | None:
+    """Return symbol knowledge, repository-local unless explicitly global."""
+
     embedder = get_embedder()
     grapher = get_grapher()
+    repo_root = _repo_root(root)
 
     # Find the symbol by name in Qdrant
-    results = embedder.search_similar(f"function {name}", limit=5)
+    results = embedder.search_similar(
+        f"function {name}",
+        limit=5,
+        repo_root=repo_root,
+        cross_repository=cross_repository,
+    )
     match = next((r for r in results if r["symbol_name"] == name), None)
     if not match:
         return None
@@ -421,6 +477,10 @@ def read_symbol(name: str) -> dict | None:
     callers = grapher.get_callers(name)
     callees = grapher.get_callees(name)
     dependents = grapher.get_dependents(name)
+    if not cross_repository:
+        callers = _repository_hits(callers, repo_root)
+        callees = _repository_hits(callees, repo_root)
+        dependents = _repository_hits(dependents, repo_root)
 
     return {
         "symbol": name,
@@ -474,8 +534,8 @@ def tldr(path: str) -> str:
     )
 
 
-def suggest_goals(path: str) -> dict:
-    """Suggest grounded next goals using active plans and concrete repo feature gaps."""
+def suggest_goals(path: str, *, cross_repository_ideas: bool = False) -> dict:
+    """Suggest local goals with optional cross-repository code evidence."""
 
     repo_root = _repo_root(path)
     snapshot = _planning_snapshot(path)
@@ -506,6 +566,32 @@ def suggest_goals(path: str) -> dict:
         filtered_candidates, key=lambda item: item.get("priority", 0), reverse=True
     )
     top_goal = ranked_candidates[0]["goal"] if ranked_candidates else None
+    shared_code_evidence: list[dict] = []
+    if cross_repository_ideas:
+        readme_excerpt = _read_repo_text(repo_root, "README.md")[:800]
+        idea_query = top_goal or f"Reusable implementation patterns for {repo_root.name}"
+        if readme_excerpt:
+            idea_query += f"\n{readme_excerpt}"
+        try:
+            shared_code_evidence = [
+                {
+                    "symbol": item.get("symbol"),
+                    "kind": item.get("kind"),
+                    "file": item.get("file"),
+                    "line": item.get("line"),
+                    "signature": item.get("signature"),
+                    "score": item.get("score"),
+                }
+                for item in read_similar(
+                    idea_query,
+                    limit=8,
+                    root=str(repo_root),
+                    cross_repository=True,
+                )
+                if not _path_is_within(str(item.get("file", "")), repo_root)
+            ][:5]
+        except Exception:
+            shared_code_evidence = []
 
     scan_context = snapshot.get("scan_context") or {}
     current = snapshot.get("current") or {}
@@ -515,8 +601,14 @@ def suggest_goals(path: str) -> dict:
 
     return {
         "module": path,
+        "scope_policy": {
+            "task_scope": "repository",
+            "evidence_scope": ("cross_repository" if cross_repository_ideas else "repository"),
+            "cross_repository_tasks": False,
+        },
         "analysis": {
             "repo_root": str(repo_root),
+            "scope_mode": "repository",
             "code_file_count": (scan_context.get("source_counts") or {}).get("code", 0),
             "test_file_count": (scan_context.get("source_counts") or {}).get("tests", 0),
             "doc_count": (scan_context.get("source_counts") or {}).get("docs", 0),
@@ -530,6 +622,7 @@ def suggest_goals(path: str) -> dict:
         },
         "top_goal": top_goal,
         "candidate_goals": ranked_candidates,
+        "shared_code_evidence": shared_code_evidence,
         "suggested_goals": _format_goal_candidates(ranked_candidates, repo_root),
         "recommended_next_action": (
             current_session.get("next_action")

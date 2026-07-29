@@ -105,7 +105,9 @@ def test_edit_context_merges_semantic_tests_and_work_items(monkeypatch, tmp_path
         },
     )
     monkeypatch.setattr(
-        coding_tools, "_similar_for_symbol", lambda _symbol: [{"symbol": "sample_variant"}]
+        coding_tools,
+        "_similar_for_symbol",
+        lambda _symbol, _root: [{"symbol": "sample_variant"}],
     )
     monkeypatch.setattr(
         coding_tools,
@@ -436,7 +438,7 @@ def test_pattern_search_prefers_reusable_matches(monkeypatch, tmp_path):
     monkeypatch.setattr(
         coding_tools,
         "_similar_for_symbol",
-        lambda _query: [
+        lambda _query, _root: [
             {
                 "symbol": "helper",
                 "kind": "function",

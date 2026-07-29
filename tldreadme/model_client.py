@@ -64,6 +64,16 @@ def model_timeout_seconds() -> float:
         return 15.0
 
 
+def ollama_embed_batch_size() -> int:
+    """Return a conservative Ollama batch size that avoids tokenizer crashes."""
+
+    raw = os.getenv("TLDREADME_EMBED_BATCH_SIZE", "128")
+    try:
+        return max(1, min(128, int(raw)))
+    except ValueError:
+        return 128
+
+
 def _run_with_deadline(operation: Callable[[], T], timeout_seconds: float) -> T:
     """Run a blocking provider request with a hard wall-clock deadline."""
 
@@ -281,20 +291,30 @@ class ModelClient:
             return []
         selected_model = model or self.settings.embed_model
         self.ensure_model_available(selected_model)
-        if self.settings.provider == "ollama":
-            path = "/api/embed"
-            request = {
-                "model": _ollama_model_name(selected_model),
-                "input": texts,
-            }
-        else:
-            path = "/v1/embeddings"
-            request = {"model": selected_model, "input": texts}
         try:
-            payload = self._request_json("POST", path, payload=request)
             if self.settings.provider == "ollama":
-                vectors = payload["embeddings"]
+                vectors: list[list[float]] = []
+                batch_size = ollama_embed_batch_size()
+                for start in range(0, len(texts), batch_size):
+                    batch = texts[start : start + batch_size]
+                    payload = self._request_json(
+                        "POST",
+                        "/api/embed",
+                        payload={
+                            "model": _ollama_model_name(selected_model),
+                            "input": batch,
+                        },
+                    )
+                    batch_vectors = payload["embeddings"]
+                    if not isinstance(batch_vectors, list) or len(batch_vectors) != len(batch):
+                        raise ValueError("provider returned an unexpected embedding count")
+                    vectors.extend(batch_vectors)
             else:
+                payload = self._request_json(
+                    "POST",
+                    "/v1/embeddings",
+                    payload={"model": selected_model, "input": texts},
+                )
                 data = payload["data"]
                 if not isinstance(data, list):
                     raise ValueError("LiteLLM returned invalid embedding data")

@@ -217,8 +217,20 @@ def init(directory: str, output: str):
     from .pipeline import run_init
     from .runtime import ensure_tree_sitter_runtime
 
-    ensure_tree_sitter_runtime()
-    run_init(Path(directory), output_dir=output)
+    try:
+        ensure_tree_sitter_runtime()
+        run_init(Path(directory), output_dir=output)
+    except Exception as exc:
+        if os.getenv("TLDREADME_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
+            raise
+        detail = " ".join(str(exc).split())[:500] or type(exc).__name__
+        click.echo()
+        click.echo("TLDREADME could not complete initialization.")
+        click.echo(f"{type(exc).__name__}: {detail}")
+        click.echo(
+            "Run `tldr doctor` for dependency checks or set TLDREADME_DEBUG=1 for a traceback."
+        )
+        raise click.exceptions.Exit(1) from None
 
 
 @main.command()
@@ -280,12 +292,35 @@ def serve(transport: str, host: str, port: int, tool_profile: str):
 
 @main.command()
 @click.argument("question")
-@click.option("--directory", "-d", type=click.Path(exists=True), help="Scope to directory")
-def ask(question: str, directory: str | None):
+@click.option(
+    "--directory",
+    "-d",
+    type=click.Path(exists=True, file_okay=False),
+    help="Repository to search; defaults to the current directory.",
+)
+@click.option(
+    "--cross-repository",
+    is_flag=True,
+    help="Explicitly include indexed code from other repositories for shared-code ideation.",
+)
+def ask(question: str, directory: str | None, cross_repository: bool):
     """Ask a question about the indexed codebase. RAG-powered answer."""
     from .rag import ask_question
 
-    answer = ask_question(question, scope=directory)
+    try:
+        answer = ask_question(
+            question,
+            scope=directory,
+            cross_repository=cross_repository,
+        )
+    except Exception as exc:
+        if os.getenv("TLDREADME_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
+            raise
+        detail = " ".join(str(exc).split())[:500] or type(exc).__name__
+        raise click.ClickException(
+            f"Indexed query unavailable ({type(exc).__name__}): {detail}. "
+            "Run `tldr doctor` to check Qdrant and the configured models."
+        ) from None
     click.echo(answer)
 
 
@@ -772,13 +807,16 @@ def plans_capture(root: str, json_output: bool):
     click.echo(f"Captured notes tracked: {result['captures_count']}")
 
 
-def _run_whats_next(root: str, json_output: bool):
+def _run_whats_next(root: str, json_output: bool, cross_repository_ideas: bool = False):
     """Shared handler for the human-facing whats-next report."""
 
     from .roadmap import render_whats_next_vibe
     from .roadmap import whats_next_vibe as build_whats_next_vibe
 
-    result = build_whats_next_vibe(root=root)
+    kwargs = {"root": root}
+    if cross_repository_ideas:
+        kwargs["cross_repository_ideas"] = True
+    result = build_whats_next_vibe(**kwargs)
     click.echo(
         json.dumps(result, indent=2, default=str) if json_output else render_whats_next_vibe(result)
     )
@@ -787,25 +825,39 @@ def _run_whats_next(root: str, json_output: bool):
 @main.command(name="whats-next")
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
 @click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
-def whats_next(root: str, json_output: bool):
+@click.option(
+    "--cross-repository-ideas",
+    is_flag=True,
+    help="Use other repositories only as shared-code idea evidence; tasks remain local.",
+)
+def whats_next(root: str, json_output: bool, cross_repository_ideas: bool):
     """Show the next strategic question and grounded options for the repository."""
-    _run_whats_next(root, json_output)
+    _run_whats_next(root, json_output, cross_repository_ideas)
 
 
 @main.command(name="whats-next-vibe", hidden=True)
 @click.argument("root", type=click.Path(exists=True, file_okay=False), default=".")
 @click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
-def whats_next_vibe_legacy(root: str, json_output: bool):
+@click.option("--cross-repository-ideas", is_flag=True, hidden=True)
+def whats_next_vibe_legacy(root: str, json_output: bool, cross_repository_ideas: bool):
     """Compatibility alias for the previous whats-next command name."""
-    _run_whats_next(root, json_output)
+    _run_whats_next(root, json_output, cross_repository_ideas)
 
 
-def _run_current_roadmap(root: str, no_write: bool, json_output: bool):
+def _run_current_roadmap(
+    root: str,
+    no_write: bool,
+    json_output: bool,
+    cross_repository_ideas: bool = False,
+):
     """Shared handler for the human-facing roadmap writer."""
 
     from .roadmap import build_current_vibe_roadmap, render_whats_next_vibe
 
-    result = build_current_vibe_roadmap(root=root, write=not no_write)
+    kwargs = {"root": root, "write": not no_write}
+    if cross_repository_ideas:
+        kwargs["cross_repository_ideas"] = True
+    result = build_current_vibe_roadmap(**kwargs)
     if json_output:
         click.echo(json.dumps(result, indent=2, default=str))
         return
@@ -823,9 +875,19 @@ def _run_current_roadmap(root: str, no_write: bool, json_output: bool):
     help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.",
 )
 @click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
-def current_roadmap(root: str, no_write: bool, json_output: bool):
+@click.option(
+    "--cross-repository-ideas",
+    is_flag=True,
+    help="Use other repositories only as shared-code idea evidence; tasks remain local.",
+)
+def current_roadmap(
+    root: str,
+    no_write: bool,
+    json_output: bool,
+    cross_repository_ideas: bool,
+):
     """Build the current roadmap snapshot and optionally write TLDROADMAP.md."""
-    _run_current_roadmap(root, no_write, json_output)
+    _run_current_roadmap(root, no_write, json_output, cross_repository_ideas)
 
 
 @main.command(name="current-vibe-roadmap", hidden=True)
@@ -836,9 +898,15 @@ def current_roadmap(root: str, no_write: bool, json_output: bool):
     help="Do not write TLDROADMAP.md or refresh .tldr/roadmap/TLDRPLANS.md.",
 )
 @click.option("--json-output", is_flag=True, help="Print the raw roadmap payload as JSON.")
-def current_vibe_roadmap_legacy(root: str, no_write: bool, json_output: bool):
+@click.option("--cross-repository-ideas", is_flag=True, hidden=True)
+def current_vibe_roadmap_legacy(
+    root: str,
+    no_write: bool,
+    json_output: bool,
+    cross_repository_ideas: bool,
+):
     """Compatibility alias for the previous current-roadmap command name."""
-    _run_current_roadmap(root, no_write, json_output)
+    _run_current_roadmap(root, no_write, json_output, cross_repository_ideas)
 
 
 @main.group()

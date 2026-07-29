@@ -23,7 +23,7 @@ docker compose up -d
 docker compose -f docker-compose.llm.yml up -d
 
 # Pull local models (Ollama runs natively, not in Docker)
-ollama pull nomic-embed-text
+ollama pull mxbai-embed-large
 ollama pull qwen2.5-coder:3b-instruct
 ```
 
@@ -151,10 +151,12 @@ Full-profile audit tools: `audit_run` (execute scan by category), `audit_profile
 |----------|---------|---------|
 | `OLLAMA_URL` | `http://localhost:11434` | Direct Ollama endpoint |
 | `LITELLM_URL` | `""` (empty = use Ollama) | LiteLLM proxy URL |
-| `TLDREADME_EMBED_MODEL` | `ollama/nomic-embed-text` | Embedding model |
+| `TLDREADME_EMBED_MODEL` | `ollama/mxbai-embed-large` | Embedding model |
 | `TLDREADME_CHAT_MODEL` | `ollama/qwen2.5-coder:3b-instruct` | Chat/synthesis model |
 | `TLDREADME_MODEL_TIMEOUT_SECONDS` | `15` | Provider request wall-clock deadline |
+| `TLDREADME_EMBED_BATCH_SIZE` | `128` | Maximum inputs per Ollama embedding request |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant vector DB |
+| `QDRANT_API_KEY` | `""` | Optional API key for authenticated Qdrant; environment only |
 | `FALKORDB_URL` | `redis://localhost:6379` | FalkorDB graph DB |
 
 ## File Layout Conventions

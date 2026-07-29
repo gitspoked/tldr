@@ -13,11 +13,24 @@ from .parser import parse_directory
 console = Console()
 
 
+def _stage_failure(stage: str, exc: Exception) -> dict[str, str]:
+    """Render one operational failure without leaking a traceback."""
+
+    detail = " ".join(str(exc).split())[:500] or type(exc).__name__
+    console.print(f"  [yellow]{stage} skipped:[/] {detail}\n")
+    return {
+        "stage": stage,
+        "error_type": type(exc).__name__,
+        "detail": detail,
+    }
+
+
 def run_init(directory: Path, output_dir: str = ".claude"):
     """Full pipeline: parse → embed → graph → generate TLDR.md."""
 
     display_directory = directory
     directory = directory.resolve()
+    warnings: list[dict[str, str]] = []
 
     console.print(f"\n[bold green]TLDREADME[/] initializing [bold]{display_directory}[/]\n")
 
@@ -33,24 +46,30 @@ def run_init(directory: Path, output_dir: str = ".claude"):
 
     if not results:
         console.print("[yellow]No parseable code found.[/]")
-        return
+        return {"status": "empty", "warnings": []}
 
     # 2. Embed into Qdrant
     console.print("[dim]Embedding into Qdrant...[/]")
-    embedder = CodeEmbedder()
-    chunks = symbols_to_chunks(results)
-    embedder.index_chunks(chunks)
-    console.print(f"  Embedded [bold]{len(chunks)}[/] code chunks\n")
+    chunks = symbols_to_chunks(results, repo_root=directory)
+    try:
+        embedder = CodeEmbedder()
+        embedder.index_chunks(chunks)
+        console.print(f"  Embedded [bold]{len(chunks)}[/] code chunks\n")
+    except Exception as exc:
+        warnings.append(_stage_failure("Qdrant embedding", exc))
 
     # 3. Build graph in FalkorDB
     console.print("[dim]Building knowledge graph in FalkorDB...[/]")
-    grapher = CodeGrapher()
-    grapher.index_results(results)
-    total_calls = sum(len(r.calls) for r in results)
-    total_imports = sum(len(r.imports) for r in results)
-    console.print(
-        f"  Graphed [bold]{total_calls}[/] call edges, [bold]{total_imports}[/] imports\n"
-    )
+    try:
+        grapher = CodeGrapher()
+        grapher.index_results(results)
+        total_calls = sum(len(r.calls) for r in results)
+        total_imports = sum(len(r.imports) for r in results)
+        console.print(
+            f"  Graphed [bold]{total_calls}[/] call edges, [bold]{total_imports}[/] imports\n"
+        )
+    except Exception as exc:
+        warnings.append(_stage_failure("FalkorDB graph", exc))
 
     # 4. Build hot index (top 100 symbols cached for instant lookup)
     console.print("[dim]Building hot index...[/]")
@@ -68,8 +87,20 @@ def run_init(directory: Path, output_dir: str = ".claude"):
     console.print(f"  Written: [bold]{claude_path}[/]\n")
 
     # Summary
-    console.print("[bold green]Done.[/] Codebase indexed.\n")
+    if warnings:
+        console.print(
+            f"[bold yellow]Done with {len(warnings)} warning(s).[/] "
+            "Local context files were generated.\n"
+        )
+    else:
+        console.print("[bold green]Done.[/] Codebase indexed.\n")
     console.print("  MCP server:  [dim]tldr serve[/]")
     console.print(f"  Watch mode:  [dim]tldr watch {directory}[/]")
     console.print('  Ask:         [dim]tldr ask "how does X work?"[/]')
     console.print()
+    return {
+        "status": "degraded" if warnings else "complete",
+        "warnings": warnings,
+        "symbols": total_symbols,
+        "files": total_files,
+    }

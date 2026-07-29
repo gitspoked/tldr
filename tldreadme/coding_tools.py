@@ -441,13 +441,13 @@ def _discover_for_goal(query: str, root: str) -> dict | None:
         return None
 
 
-def _similar_for_symbol(symbol: str) -> list[dict]:
+def _similar_for_symbol(symbol: str, root: str) -> list[dict]:
     """Find similar implementations when the semantic/vector stack is available."""
 
     try:
         from .rag import read_similar
 
-        return read_similar(symbol, limit=3)
+        return read_similar(symbol, limit=3, root=root)
     except Exception:
         return []
 
@@ -866,7 +866,7 @@ def edit_context(path: str, line: int, column: int | None = None, root: str = ".
     symbol_name = (enclosing or {}).get("name") or (semantic or {}).get("token")
 
     knowledge = _knowledge_for_symbol(symbol_name, str(repo_root)) if symbol_name else None
-    similar = _similar_for_symbol(symbol_name) if symbol_name else []
+    similar = _similar_for_symbol(symbol_name, str(repo_root)) if symbol_name else []
     tests = test_map(path=str(source_path), symbol=symbol_name, root=str(repo_root))
     work_context = _current_work_context(repo_root, str(source_path), symbol_name)
     fallback_used: list[str] = []
@@ -1180,7 +1180,7 @@ def pattern_search(
     search_query = query or symbol or (Path(path).stem if path else "")
     fallback_used: list[str] = []
 
-    semantic = _similar_for_symbol(search_query) if search_query else []
+    semantic = _similar_for_symbol(search_query, str(repo_root)) if search_query else []
     if not semantic:
         fallback_used.append("semantic_pattern_matches_unavailable")
 

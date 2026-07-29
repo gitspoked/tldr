@@ -29,6 +29,7 @@ def test_write_ollama_configuration_defaults_cloud_to_local_only(tmp_path):
 
     assert result["configured"] is True
     assert result["provider"] == "ollama"
+    assert result["settings"]["TLDREADME_EMBED_MODEL"] == "ollama/mxbai-embed-large"
     assert result["settings"]["TLDREADME_CHAT_MODEL"].startswith("ollama/")
     assert result["inference_policy"]["allow_cloud_non_code"] is False
     assert result["inference_policy"]["allow_cloud_code"] is False

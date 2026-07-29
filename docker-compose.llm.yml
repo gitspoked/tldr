@@ -6,8 +6,8 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "localhost:6033:6333"
+      - "localhost:6034:6334"
     volumes:
       - ./.tldr/qdrant:/qdrant/storage
     healthcheck:
@@ -19,7 +19,7 @@ services:
   falkordb:
     image: falkordb/falkordb:latest
     ports:
-      - "6379:6379"
+      - "localhost:6079:6379"
     volumes:
       - ./.tldr/falkordb:/data
     command: >
@@ -35,7 +35,7 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     ports:
-      - "4000:4000"
+      - "6004:4000"
     volumes:
       - ./litellm-config.yaml:/app/config.yaml
     command: --config /app/config.yaml --port 4000

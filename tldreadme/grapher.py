@@ -1,5 +1,7 @@
 """FalkorDB graph builder - call graphs, imports, data flow, patterns."""
 
+from urllib.parse import unquote, urlparse
+
 from .config import get_setting
 from .lazy import load_attr
 from .parser import ParseResult
@@ -12,7 +14,18 @@ class CodeGrapher:
 
     def __init__(self, url: str = None):
         url = url or get_setting("FALKORDB_URL")
-        self.db = load_attr("falkordb", "FalkorDB")(url=url)
+        parsed = urlparse(url)
+        client_kwargs: dict[str, object] = {
+            "host": parsed.hostname or "localhost",
+            "port": parsed.port or 6379,
+            "ssl": parsed.scheme == "rediss",
+        }
+        if parsed.username:
+            client_kwargs["username"] = unquote(parsed.username)
+        if parsed.password:
+            client_kwargs["password"] = unquote(parsed.password)
+
+        self.db = load_attr("falkordb", "FalkorDB")(**client_kwargs)
         self.graph = self.db.select_graph(GRAPH_NAME)
         self._ensure_schema()
 

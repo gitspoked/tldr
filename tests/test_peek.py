@@ -2,8 +2,10 @@
 
 import json
 
+import httpx
 from click.testing import CliRunner
 
+from tldreadme import peek as peek_module
 from tldreadme.cli import main as cli_main
 from tldreadme.coding_tools import repo_lookup
 from tldreadme.peek import (
@@ -214,6 +216,37 @@ def test_peek_layer3_graceful_when_services_down(tmp_path, monkeypatch):
         any("qdrant" in fallback for fallback in result["fallback_used"])
         or result["fallback_used"] == []
     )
+
+
+def test_peek_layer3_passes_qdrant_api_key(tmp_path, monkeypatch):
+    captured = {}
+
+    class UnauthorizedResponse:
+        status_code = 401
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return UnauthorizedResponse()
+
+    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+    monkeypatch.setenv("QDRANT_API_KEY", "test-secret")
+    monkeypatch.setenv("FALKORDB_URL", "redis://localhost:19998")
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    enrichment_layers = []
+    fallback_used = []
+    peek_module._enrich_live_services(
+        tmp_path,
+        {"related": []},
+        enrichment_layers,
+        fallback_used,
+    )
+
+    assert captured["url"] == "http://localhost:6333/collections"
+    assert captured["headers"] == {"api-key": "test-secret"}
+    assert captured["timeout"] == 1.0
+    assert "qdrant" not in enrichment_layers
 
 
 # ---------------------------------------------------------------------------

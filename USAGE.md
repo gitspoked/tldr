@@ -94,6 +94,15 @@ tldr whats-next .
 tldr current-roadmap .
 ```
 
+Both commands keep candidate work inside the selected repository. To compare
+shared code while forming ideas, opt in:
+
+```bash
+tldr whats-next . --cross-repository-ideas
+```
+
+External matches are returned as evidence. They do not become local tasks.
+
 The full MCP profile also exposes file-backed plan, task, and session tools.
 Their state lives under `.tldr/work/`, so interrupted work can be resumed
 without relying on chat history.
@@ -141,11 +150,13 @@ tldr peek PATH
 tldr init PATH
 tldr watch PATH
 tldr ask "question"
+tldr ask "question" --cross-repository
 tldr serve
 tldr doctor
 tldr summary
 tldr plans-capture PATH
 tldr whats-next PATH
+tldr whats-next PATH --cross-repository-ideas
 tldr current-roadmap PATH
 tldr audit all --dry-run
 ```

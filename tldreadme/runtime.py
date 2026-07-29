@@ -229,11 +229,12 @@ def install_options_for_check(check: dict[str, object]) -> list[dict[str, str]]:
         return _dedupe_options(options)
 
     if name == "Ollama":
+        embed_model = get_setting("TLDREADME_EMBED_MODEL").removeprefix("ollama/")
         if brew and is_macos:
             options.append(_install_option("Install Ollama with Homebrew", "brew install ollama"))
         options.append(_install_option("Start the Ollama server", "ollama serve"))
         options.append(
-            _install_option("Pull the default embed model", "ollama pull nomic-embed-text")
+            _install_option("Pull the configured embed model", f"ollama pull {embed_model}")
         )
         options.append(
             _install_option("Pull the default chat model", "ollama pull qwen2.5-coder:3b-instruct")

@@ -14,10 +14,29 @@ from .parser import detect_language, parse_file
 class CodeChangeHandler(FileSystemEventHandler):
     """On file save: re-parse AST, update embeddings, update graph."""
 
-    def __init__(self, embedder: CodeEmbedder, grapher: CodeGrapher):
+    def __init__(
+        self,
+        embedder: CodeEmbedder,
+        grapher: CodeGrapher,
+        repo_roots: list[Path],
+    ):
         self.embedder = embedder
         self.grapher = grapher
+        self.repo_roots = sorted(
+            (root.resolve() for root in repo_roots),
+            key=lambda root: len(root.parts),
+            reverse=True,
+        )
         self._debounce: dict[str, float] = {}
+
+    def _repo_root_for(self, path: Path) -> Path:
+        """Return the narrowest watched repository containing a changed file."""
+
+        resolved_path = path.resolve()
+        for root in self.repo_roots:
+            if resolved_path == root or root in resolved_path.parents:
+                return root
+        return resolved_path.parent
 
     def on_modified(self, event):
         if event.is_directory:
@@ -57,7 +76,7 @@ class CodeChangeHandler(FileSystemEventHandler):
         print(f"[tldr] re-indexing: {path_str} ({len(result.symbols)} symbols)")
 
         # Update embeddings
-        chunks = symbols_to_chunks([result])
+        chunks = symbols_to_chunks([result], repo_root=self._repo_root_for(path))
         self.embedder.index_chunks(chunks)
 
         # Update graph
@@ -68,7 +87,7 @@ def start_watcher(directories: list[Path]):
     """Watch directories for code changes, re-index incrementally."""
     embedder = CodeEmbedder()
     grapher = CodeGrapher()
-    handler = CodeChangeHandler(embedder, grapher)
+    handler = CodeChangeHandler(embedder, grapher, directories)
 
     observer = Observer()
     for d in directories:

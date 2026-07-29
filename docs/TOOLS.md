@@ -69,6 +69,11 @@ the catalog are not callable while they are deferred or suppressed; select the
 | `explain` | Qdrant, FalkorDB, embedding and chat models | Synthesize a symbol explanation from source, graph, and similar code. |
 | `tldr` | FalkorDB and chat model | Generate a concise indexed module summary. |
 
+`read_symbol` and `read_similar` use the selected repository by default. Set
+`cross_repository=true` only when comparing code across indexed repositories.
+Repository-local results are checked again by file path before they are
+returned.
+
 The composite tools without hard requirements degrade to deterministic local
 results when optional enrichment is unavailable.
 
@@ -90,6 +95,11 @@ inside `scanning`. Queries can use a literal character, a name such as
 | `capture_plans` | Save planning input and refresh the local planning digest. |
 | `whats_next` | Return the next strategic question and grounded options. |
 | `current_roadmap` | Build or write the current durable roadmap view. |
+
+Planning tasks always come from the selected repository. Set
+`cross_repository_ideas=true` to add matching code from other repositories
+under `shared_code_evidence`. External plans and tasks are never added to the
+candidate list.
 
 ## Workboard
 
