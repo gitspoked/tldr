@@ -165,7 +165,7 @@ def peek_target(path: Path | str) -> Dict[str, Any]:
         fallback_used.append("context_docs_failed")
 
     # Layer 2: indexed knowledge
-    project_root = _find_project_root(target if target.is_dir() else target.parent)
+    project_root = target if target.is_dir() else _find_project_root(target.parent)
     tldr_dir = project_root / ".tldr"
     if tldr_dir.is_dir():
         result["indexed"] = True
@@ -351,9 +351,8 @@ def _enrich_context_docs(target: Path) -> tuple[list[dict], dict | None]:
     from .deps import extract_deps_from_directory
 
     scan_root = target.parent if target.is_file() else target
-    project_root = _find_project_root(scan_root)
-    if project_root != scan_root:
-        scan_root = project_root
+    if target.is_file():
+        scan_root = _find_project_root(scan_root)
 
     raw_docs = scan_context_docs(scan_root)
     context_docs = []
