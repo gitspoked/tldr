@@ -100,6 +100,55 @@ def test_suggest_goals_identifies_audit_gap_before_watcher_gap(monkeypatch, tmp_
     assert "local-first `tldr audit` command" in result["top_goal"]
 
 
+def test_suggest_goals_does_not_inject_tldreadme_tasks_into_other_repositories(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "README.md").write_text("# unrelated project\n", encoding="utf-8")
+    monkeypatch.setattr(rag, "_planning_snapshot", lambda _path: _planning_snapshot())
+
+    result = rag.suggest_goals(str(tmp_path))
+
+    assert result["top_goal"] is None
+    assert result["candidate_goals"] == []
+    assert result["analysis"]["scope_mode"] == "repository"
+
+
+def test_cross_repository_ideas_are_evidence_not_candidate_tasks(monkeypatch, tmp_path):
+    package = tmp_path / "tldreadme"
+    package.mkdir()
+    (package / "cli.py").write_text("def main():\n    pass\n", encoding="utf-8")
+    (package / "watcher.py").write_text("def start_watcher():\n    pass\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# target project\n", encoding="utf-8")
+    monkeypatch.setattr(rag, "_planning_snapshot", lambda _path: _planning_snapshot())
+    monkeypatch.setattr(
+        rag,
+        "read_similar",
+        lambda *_args, **_kwargs: [
+            {
+                "symbol": "shared_retry_pattern",
+                "kind": "function",
+                "file": "/workspace/other-repo/retry.py",
+                "line": 12,
+                "signature": "def shared_retry_pattern():",
+                "score": 0.91,
+            }
+        ],
+    )
+
+    result = rag.suggest_goals(str(tmp_path), cross_repository_ideas=True)
+
+    assert [candidate["id"] for candidate in result["candidate_goals"]] == [
+        "local-audit-pipeline",
+        "watcher-context-regeneration",
+    ]
+    assert result["shared_code_evidence"][0]["symbol"] == "shared_retry_pattern"
+    assert result["scope_policy"] == {
+        "task_scope": "repository",
+        "evidence_scope": "cross_repository",
+        "cross_repository_tasks": False,
+    }
+
+
 def test_best_question_uses_repo_lookup_and_change_plan(monkeypatch, tmp_path):
     repo = tmp_path
     pkg = repo / "tldreadme"

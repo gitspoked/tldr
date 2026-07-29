@@ -115,6 +115,28 @@ def test_ollama_embedding_uses_native_api_without_a_pull():
     assert all("pull" not in request["path"] for request in requests)
 
 
+def test_ollama_embedding_splits_large_requests_into_bounded_batches(monkeypatch):
+    monkeypatch.setenv("TLDREADME_EMBED_BATCH_SIZE", "128")
+    routes = {
+        "/api/tags": (
+            200,
+            {"models": [{"name": "nomic-embed-text:latest"}]},
+            0,
+        ),
+        "/api/embed": (200, {"embeddings": [[0.25, 0.75]] * 128}, 0),
+    }
+    texts = [f"chunk {index}" for index in range(256)]
+
+    with provider_server(routes) as (base_url, requests):
+        client = ModelClient(ollama_settings(base_url), timeout_seconds=0.5)
+        vectors = client.embed(texts)
+
+    embed_requests = [request for request in requests if request["path"] == "/api/embed"]
+    assert len(vectors) == len(texts)
+    assert len(embed_requests) == 2
+    assert all(len(request["body"]["input"]) == 128 for request in embed_requests)
+
+
 def test_slow_ollama_completion_returns_within_wall_clock_deadline():
     routes = {
         "/api/tags": (

@@ -87,6 +87,16 @@ def test_symbols_to_chunks_empty():
     assert chunks == []
 
 
+def test_symbols_to_chunks_record_repository_identity(tmp_path):
+    source = tmp_path / "sample.py"
+    source.write_text("def sample():\n    return 1\n", encoding="utf-8")
+
+    chunks = symbols_to_chunks([parse_file(source)], repo_root=tmp_path)
+
+    assert chunks
+    assert {chunk.repo_root for chunk in chunks} == {str(tmp_path.resolve())}
+
+
 def test_symbols_to_chunks_no_symbols():
     with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
         f.write("# just a comment\nx = 1\n")
@@ -134,6 +144,7 @@ def test_qdrant_client_skips_eager_compatibility_probe(monkeypatch):
             return SimpleNamespace(collections=[])
 
     monkeypatch.setattr(embedder, "_qdrant_client_cls", lambda: FakeQdrantClient)
+    monkeypatch.delenv("QDRANT_API_KEY", raising=False)
 
     client = embedder.CodeEmbedder("http://127.0.0.1:6333")
 
@@ -142,3 +153,127 @@ def test_qdrant_client_skips_eager_compatibility_probe(monkeypatch):
         "url": "http://127.0.0.1:6333",
         "check_compatibility": False,
     }
+
+
+def test_qdrant_client_passes_api_key_from_environment(monkeypatch):
+    captured = {}
+
+    class FakeQdrantClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def get_collections(self):
+            return SimpleNamespace(collections=[])
+
+    monkeypatch.setattr(embedder, "_qdrant_client_cls", lambda: FakeQdrantClient)
+    monkeypatch.setenv("QDRANT_API_KEY", "test-secret")
+
+    client = embedder.CodeEmbedder("http://127.0.0.1:6333")
+
+    assert client._collection_created is False
+    assert captured == {
+        "url": "http://127.0.0.1:6333",
+        "check_compatibility": False,
+        "api_key": "test-secret",
+    }
+
+
+def test_search_similar_is_repository_scoped_by_default(monkeypatch, tmp_path):
+    captured = {}
+
+    class FakeClient:
+        def query_points(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                points=[SimpleNamespace(payload={"symbol_name": "sample"}, score=0.9)]
+            )
+
+    def model_factory(**kwargs):
+        return kwargs
+
+    monkeypatch.setattr(embedder, "embed_text", lambda _query: [0.1, 0.2])
+    monkeypatch.setattr(
+        embedder,
+        "_qdrant_models",
+        lambda: {
+            "FieldCondition": model_factory,
+            "Filter": model_factory,
+            "MatchValue": model_factory,
+        },
+    )
+    code_embedder = object.__new__(embedder.CodeEmbedder)
+    code_embedder.client = FakeClient()
+
+    results = code_embedder.search_similar("sample", repo_root=tmp_path)
+
+    assert results[0]["symbol_name"] == "sample"
+    assert captured["query_filter"] == {
+        "must": [
+            {
+                "key": "repo_root",
+                "match": {"value": str(tmp_path.resolve())},
+            }
+        ]
+    }
+
+
+def test_search_similar_cross_repository_requires_explicit_opt_in(monkeypatch):
+    captured = {}
+
+    class FakeClient:
+        def query_points(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(points=[])
+
+    monkeypatch.setattr(embedder, "embed_text", lambda _query: [0.1, 0.2])
+    code_embedder = object.__new__(embedder.CodeEmbedder)
+    code_embedder.client = FakeClient()
+
+    code_embedder.search_similar("shared pattern", cross_repository=True)
+
+    assert captured["query_filter"] is None
+
+
+def test_search_similar_legacy_fallback_filters_out_other_repositories(monkeypatch, tmp_path):
+    calls = []
+    local_file = tmp_path / "local.py"
+    outside_file = tmp_path.parent / "other-repo" / "outside.py"
+
+    class FakeClient:
+        def query_points(self, **kwargs):
+            calls.append(kwargs)
+            if kwargs["query_filter"] is not None:
+                return SimpleNamespace(points=[])
+            return SimpleNamespace(
+                points=[
+                    SimpleNamespace(
+                        payload={"symbol_name": "outside", "file": str(outside_file)},
+                        score=0.95,
+                    ),
+                    SimpleNamespace(
+                        payload={"symbol_name": "local", "file": str(local_file)},
+                        score=0.9,
+                    ),
+                ]
+            )
+
+    def model_factory(**kwargs):
+        return kwargs
+
+    monkeypatch.setattr(embedder, "embed_text", lambda _query: [0.1, 0.2])
+    monkeypatch.setattr(
+        embedder,
+        "_qdrant_models",
+        lambda: {
+            "FieldCondition": model_factory,
+            "Filter": model_factory,
+            "MatchValue": model_factory,
+        },
+    )
+    code_embedder = object.__new__(embedder.CodeEmbedder)
+    code_embedder.client = FakeClient()
+
+    results = code_embedder.search_similar("sample", repo_root=tmp_path)
+
+    assert len(calls) == 2
+    assert [item["symbol_name"] for item in results] == ["local"]

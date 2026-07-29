@@ -54,6 +54,43 @@ def test_cli_ask_help():
     result = runner.invoke(main, ["ask", "--help"])
     assert result.exit_code == 0
     assert "QUESTION" in result.output
+    assert "--cross-repository" in result.output
+
+
+def test_cli_ask_cross_repository_is_explicit(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_ask(question, scope=None, *, cross_repository=False):
+        captured.update(
+            {
+                "question": question,
+                "scope": scope,
+                "cross_repository": cross_repository,
+            }
+        )
+        return "shared-code ideas"
+
+    monkeypatch.setattr("tldreadme.rag.ask_question", fake_ask)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "ask",
+            "find reusable patterns",
+            "--directory",
+            str(tmp_path),
+            "--cross-repository",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "shared-code ideas"
+    assert captured == {
+        "question": "find reusable patterns",
+        "scope": str(tmp_path),
+        "cross_repository": True,
+    }
 
 
 def test_cli_audit_help():
@@ -117,6 +154,7 @@ def test_cli_whats_next_help():
     result = runner.invoke(main, ["whats-next", "--help"])
     assert result.exit_code == 0
     assert "strategic question" in result.output.lower()
+    assert "--cross-repository-ideas" in result.output
 
 
 def test_cli_current_roadmap_help():
@@ -777,3 +815,20 @@ def test_cli_unknown_command():
     runner = CliRunner()
     result = runner.invoke(main, ["nonexistent"])
     assert result.exit_code != 0
+
+
+def test_cli_init_hides_unexpected_traceback(monkeypatch, tmp_path):
+    monkeypatch.delenv("TLDREADME_DEBUG", raising=False)
+    monkeypatch.setattr("tldreadme.runtime.ensure_tree_sitter_runtime", lambda: None)
+    monkeypatch.setattr(
+        "tldreadme.pipeline.run_init",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("backend exploded")),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["init", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "TLDREADME could not complete initialization." in result.output
+    assert "RuntimeError: backend exploded" in result.output
+    assert "Traceback" not in result.output

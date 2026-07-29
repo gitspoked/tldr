@@ -206,7 +206,11 @@ def test_run_init_resolves_relative_root_before_indexing(monkeypatch, tmp_path):
         pipeline, "parse_directory", lambda root: parse_calls.append(root) or fake_results
     )
     monkeypatch.setattr(pipeline, "CodeEmbedder", lambda: FakeEmbedder())
-    monkeypatch.setattr(pipeline, "symbols_to_chunks", lambda results: results)
+    monkeypatch.setattr(
+        pipeline,
+        "symbols_to_chunks",
+        lambda results, **_kwargs: results,
+    )
     monkeypatch.setattr(pipeline, "CodeGrapher", lambda: FakeGrapher())
     monkeypatch.setattr(
         pipeline,
@@ -226,6 +230,56 @@ def test_run_init_resolves_relative_root_before_indexing(monkeypatch, tmp_path):
     assert parse_calls == [resolved_repo]
     assert hot_index_calls == [resolved_repo]
     assert generate_calls == [resolved_repo]
+
+
+def test_run_init_continues_after_optional_backend_failures(monkeypatch, tmp_path):
+    repo = tmp_path / "demo"
+    repo.mkdir()
+
+    class FakeResult:
+        symbols = [object()]
+        calls = []
+        imports = []
+        line_count = 1
+
+    class FailingEmbedder:
+        def index_chunks(self, _chunks):
+            raise RuntimeError("embedding backend offline")
+
+    class FailingGrapher:
+        def index_results(self, _results):
+            raise RuntimeError("graph backend offline")
+
+    class FakeHotIndex:
+        entries = [object()]
+
+        def save(self, _path):
+            return None
+
+    generated = []
+    monkeypatch.setattr(pipeline, "parse_directory", lambda _root: [FakeResult()])
+    monkeypatch.setattr(pipeline, "CodeEmbedder", lambda: FailingEmbedder())
+    monkeypatch.setattr(
+        pipeline,
+        "symbols_to_chunks",
+        lambda results, **_kwargs: results,
+    )
+    monkeypatch.setattr(pipeline, "CodeGrapher", lambda: FailingGrapher())
+    monkeypatch.setattr(pipeline, "build_hot_index", lambda _root, _results: FakeHotIndex())
+    monkeypatch.setattr(
+        pipeline,
+        "generate_claude_md",
+        lambda root, **_kwargs: generated.append(root) or root / ".claude" / "TLDR.md",
+    )
+
+    report = pipeline.run_init(repo)
+
+    assert report["status"] == "degraded"
+    assert [warning["stage"] for warning in report["warnings"]] == [
+        "Qdrant embedding",
+        "FalkorDB graph",
+    ]
+    assert generated == [repo.resolve()]
 
 
 def test_context_signatures_are_boundary_truncated_and_markdown_safe():

@@ -77,7 +77,7 @@ def know(name: str, hot_index: Optional[HotIndex] = None, root: str = ".") -> di
 
     # Step 3: Graph (if available - callers/callees)
     try:
-        callers = rag.read_symbol(name)
+        callers = rag.read_symbol(name, root=root)
         if callers:
             result["callers"] = callers.get("callers", [])
             result["callees"] = callers.get("callees", [])
@@ -164,7 +164,7 @@ def discover(query: str, root: str = ".", hot_index: Optional[HotIndex] = None) 
     # Step 2: Semantic search via Qdrant
     semantic_results = []
     try:
-        similar = rag.read_similar(query, limit=10)
+        similar = rag.read_similar(query, limit=10, root=root)
         semantic_results = [
             {
                 "source": "semantic",

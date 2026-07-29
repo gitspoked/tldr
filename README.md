@@ -38,7 +38,7 @@ python3.12 -m venv .venv
 For the default Ollama configuration, download the two models explicitly:
 
 ```bash
-ollama pull nomic-embed-text
+ollama pull mxbai-embed-large
 ollama pull qwen2.5-coder:3b-instruct
 docker compose up -d
 .venv/bin/tldr doctor
@@ -140,11 +140,20 @@ default is 15 seconds and can be changed with
 against `/api/tags` before inference, so a missing model is reported without
 triggering a pull.
 
-LiteLLM credentials remain environment-managed. `tldr setup` stores endpoints,
-model aliases, tool profile, and inference policy, but not secrets. Codex,
-Claude, and Gemini consumer-subscription selections are routing preferences for
-a host integration; they do not grant provider access and are not reusable as
-LiteLLM credentials.
+Ollama embedding requests are split into batches of at most 128 inputs to avoid
+overloading the local tokenizer. Lower the limit with
+`TLDREADME_EMBED_BATCH_SIZE` when running on constrained hardware.
+
+LiteLLM and Qdrant credentials remain environment-managed. Set
+`QDRANT_API_KEY` when the configured Qdrant endpoint requires authentication.
+`tldr setup` stores endpoints, model aliases, tool profile, and inference
+policy, but not secrets. Codex, Claude, and Gemini consumer-subscription
+selections are routing preferences for a host integration; they do not grant
+provider access and are not reusable as LiteLLM credentials.
+
+`tldr init` keeps parsing and writes local context files when Qdrant or
+FalkorDB is unavailable. It reports each skipped backend as a warning. Set
+`TLDREADME_DEBUG=1` when a full traceback is needed.
 
 ## Main commands
 
@@ -165,6 +174,29 @@ tldr whats-next PATH               # grounded next strategic question
 tldr current-roadmap PATH          # refresh the durable roadmap
 tldr audit all --dry-run           # preview local scanner selection
 ```
+
+## Repository scope
+
+Indexed queries stay inside one repository unless cross-repository search is
+requested.
+
+```bash
+tldr ask -d PATH "question"
+tldr ask "find a shared implementation pattern" --cross-repository
+```
+
+`tldr whats-next PATH` reads plans, tasks, source, and documentation from
+`PATH`. Work from another repository is not added to its candidate list.
+Cross-repository code can be used as optional idea material:
+
+```bash
+tldr whats-next PATH --cross-repository-ideas
+```
+
+That option adds external matches under `shared_code_evidence`. The task scope
+remains the selected repository. New indexes store a canonical repository root
+with each vector. Older indexes are filtered by file path until they are
+indexed again.
 
 ## Architecture
 

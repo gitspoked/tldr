@@ -51,6 +51,13 @@ Setup writes `~/.config/tldreadme/config.json` by default. It stores endpoints,
 model names, tool profile, and inference policy. It does not store API keys or
 provider credentials.
 
+If the configured Qdrant endpoint requires authentication, provide its key in
+the process environment:
+
+```bash
+export QDRANT_API_KEY="..."
+```
+
 Check the saved state without contacting any service:
 
 ```bash
@@ -76,7 +83,7 @@ uvx --python 3.12 \
 Ollama models must be downloaded explicitly:
 
 ```bash
-ollama pull nomic-embed-text
+ollama pull mxbai-embed-large
 ollama pull qwen2.5-coder:3b-instruct
 ollama list
 ```
@@ -167,11 +174,16 @@ cp .env.example .env
 docker compose -f docker-compose.llm.yml up -d
 tldr setup \
   --provider litellm \
-  --litellm-url http://localhost:4000 \
+  --litellm-url http://localhost:6004 \
   --embed-model embed \
-  --chat-model chat
+  --chat-model chat \
+  --qdrant-url http://localhost:6033 \
+  --falkordb-url redis://localhost:6079
 tldr doctor
 ```
+
+The alternate host ports keep this stack separate from services already using
+4000, 6333, or 6379. Containers still use their standard ports internally.
 
 Configure the upstream provider and credentials in LiteLLM or its environment.
 TLDREADME can add `Authorization: Bearer` from `LITELLM_API_KEY` or

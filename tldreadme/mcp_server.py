@@ -1390,7 +1390,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 name="read_symbol",
                 description=(
                     "Return a symbol's source, callers, callees, and dependents from "
-                    "the indexed vector and graph stores."
+                    "the indexed vector and graph stores. Results stay within `root` "
+                    "unless cross_repository is explicitly true."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1398,6 +1399,15 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                         "name": {
                             "type": "string",
                             "description": "Symbol name (function, class, struct)",
+                        },
+                        "root": {
+                            "type": "string",
+                            "description": "Repository root; defaults to the current directory",
+                        },
+                        "cross_repository": {
+                            "type": "boolean",
+                            "description": "Explicitly search other indexed repositories",
+                            "default": False,
                         },
                     },
                     "required": ["name"],
@@ -1407,7 +1417,8 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                 name="read_similar",
                 description=(
                     "Find semantically similar functions and classes, including their "
-                    "source. Use this to compare established patterns in the repository."
+                    "source. Defaults to one repository; set cross_repository explicitly "
+                    "to compare shared-code patterns across repositories."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1415,6 +1426,15 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                         "query": {
                             "type": "string",
                             "description": "What kind of code to find (e.g. 'error handling', 'HTTP handler', 'ICE agent')",
+                        },
+                        "root": {
+                            "type": "string",
+                            "description": "Repository root; defaults to the current directory",
+                        },
+                        "cross_repository": {
+                            "type": "boolean",
+                            "description": "Explicitly include other indexed repositories",
+                            "default": False,
                         },
                         "limit": {"type": "integer", "description": "Max results", "default": 5},
                     },
@@ -1562,6 +1582,14 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "type": "object",
                     "properties": {
                         "path": {"type": "string", "description": "Module/directory to analyze"},
+                        "cross_repository_ideas": {
+                            "type": "boolean",
+                            "description": (
+                                "Use other repositories only as shared-code evidence; "
+                                "candidate tasks remain local"
+                            ),
+                            "default": False,
+                        },
                     },
                     "required": ["path"],
                 },
@@ -1648,6 +1676,14 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     "type": "object",
                     "properties": {
                         "root": {"type": "string", "description": "Repository root (optional)"},
+                        "cross_repository_ideas": {
+                            "type": "boolean",
+                            "description": (
+                                "Use other repositories only as shared-code evidence; "
+                                "candidate tasks remain local"
+                            ),
+                            "default": False,
+                        },
                     },
                 },
             ),
@@ -1663,6 +1699,14 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                         "write": {
                             "type": "boolean",
                             "description": "Whether to write TLDROADMAP.md and refresh the TLDRPLANS digest",
+                            "default": False,
+                        },
+                        "cross_repository_ideas": {
+                            "type": "boolean",
+                            "description": (
+                                "Use other repositories only as shared-code evidence; "
+                                "candidate tasks remain local"
+                            ),
                             "default": False,
                         },
                     },
@@ -2547,11 +2591,20 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             return [TextContent(type="text", text=result)]
 
         if name == "read_symbol":
-            result = _rag().read_symbol(arguments["name"])
+            result = _rag().read_symbol(
+                arguments["name"],
+                root=arguments.get("root"),
+                cross_repository=arguments.get("cross_repository", False),
+            )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "read_similar":
-            result = _rag().read_similar(arguments["query"], limit=arguments.get("limit", 5))
+            result = _rag().read_similar(
+                arguments["query"],
+                limit=arguments.get("limit", 5),
+                root=arguments.get("root"),
+                cross_repository=arguments.get("cross_repository", False),
+            )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "read_module":
@@ -2846,7 +2899,10 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             return [TextContent(type="text", text=result)]
 
         if name == "suggest_goals":
-            result = _rag().suggest_goals(arguments["path"])
+            result = _rag().suggest_goals(
+                arguments["path"],
+                cross_repository_ideas=arguments.get("cross_repository_ideas", False),
+            )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "best_question":
@@ -2891,13 +2947,17 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "whats_next":
-            result = _roadmap().whats_next_vibe(root=arguments.get("root", "."))
+            result = _roadmap().whats_next_vibe(
+                root=arguments.get("root", "."),
+                cross_repository_ideas=arguments.get("cross_repository_ideas", False),
+            )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "current_roadmap":
             result = _roadmap().build_current_vibe_roadmap(
                 root=arguments.get("root", "."),
                 write=arguments.get("write", False),
+                cross_repository_ideas=arguments.get("cross_repository_ideas", False),
             )
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 

@@ -15,7 +15,7 @@ PACKAGE_SOURCE = f"git+https://github.com/gitspoked/tldr.git@v{__version__}"
 DEFAULT_SETTINGS = {
     "OLLAMA_URL": "http://localhost:11434",
     "LITELLM_URL": "",
-    "TLDREADME_EMBED_MODEL": "ollama/nomic-embed-text",
+    "TLDREADME_EMBED_MODEL": "ollama/mxbai-embed-large",
     "TLDREADME_CHAT_MODEL": "ollama/qwen2.5-coder:3b-instruct",
     "QDRANT_URL": "http://localhost:6333",
     "FALKORDB_URL": "redis://localhost:6379",
@@ -23,7 +23,7 @@ DEFAULT_SETTINGS = {
 }
 PROVIDER_MODEL_DEFAULTS = {
     "ollama": {
-        "TLDREADME_EMBED_MODEL": "ollama/nomic-embed-text",
+        "TLDREADME_EMBED_MODEL": "ollama/mxbai-embed-large",
         "TLDREADME_CHAT_MODEL": "ollama/qwen2.5-coder:3b-instruct",
     },
     "litellm": {

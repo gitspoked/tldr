@@ -395,12 +395,18 @@ def _enrich_live_services(
     from .config import get_setting
 
     qdrant_url = get_setting("QDRANT_URL")
+    qdrant_api_key = get_setting("QDRANT_API_KEY").strip()
     falkordb_url = get_setting("FALKORDB_URL")
 
     try:
         import httpx
 
-        resp = httpx.get(f"{qdrant_url}/collections", timeout=1.0)
+        qdrant_headers = {"api-key": qdrant_api_key} if qdrant_api_key else None
+        resp = httpx.get(
+            f"{qdrant_url}/collections",
+            headers=qdrant_headers,
+            timeout=1.0,
+        )
         if resp.status_code == 200:
             enrichment_layers.append("qdrant")
             try:
@@ -408,7 +414,8 @@ def _enrich_live_services(
 
                 embedder = get_embedder()
                 query = target.stem if target.is_file() else target.name
-                similar = embedder.search_similar(query, limit=5)
+                repo_root = target.parent if target.is_file() else target
+                similar = embedder.search_similar(query, limit=5, repo_root=repo_root)
                 for chunk in similar:
                     result["related"].append(
                         {
