@@ -86,6 +86,12 @@ def _audit():
     return load_module("tldreadme.audit")
 
 
+def _docfetch():
+    """Load the privacy-gated dependency-doc fetcher only when needed."""
+
+    return load_module("tldreadme.docfetch")
+
+
 def _tool_meta(
     *,
     category: str,
@@ -578,6 +584,15 @@ TOOL_METADATA = {
         read_only=False,
         latency="medium",
         backends=["filesystem"],
+        profiles=["full"],
+        fallback_to=[],
+    ),
+    "dep_docs": _tool_meta(
+        category="dependencies",
+        priority="advanced",
+        read_only=True,
+        latency="slow",
+        backends=["filesystem", "network"],
         profiles=["full"],
         fallback_to=[],
     ),
@@ -1342,6 +1357,25 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
     async def list_tools() -> list[Tool]:
         capabilities = _runtime_capabilities()
         tools = [
+            Tool(
+                name="dep_docs",
+                description=(
+                    "Fetch CURRENT documentation for an external DEPENDENCY (not this project's own code). "
+                    "Privacy-gated: OFF by default. Only the dependency name + version + a short generic topic "
+                    "may leave the machine, and only when TLDR_DEP_DOCS=context7 (opt-in); TLDR_DEP_DOCS=local "
+                    "reads installed package metadata with no egress. Omit `library` to list the project's "
+                    "declared dependencies."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "library": {"type": "string", "description": "Dependency/package name, e.g. 'fastapi'. Omit to list declared dependencies."},
+                        "topic": {"type": "string", "description": "Short generic question about the library's own docs (e.g. 'authentication', 'routing'). Must not reference this project.", "default": "overview"},
+                        "version": {"type": "string", "description": "Pinned version; resolved from the project's manifests when omitted."},
+                        "root": {"type": "string", "description": "Project root (used only locally to read manifests and cache docs)."},
+                    },
+                },
+            ),
             Tool(
                 name="configuration_setup",
                 description=(
@@ -2521,6 +2555,15 @@ def _build_server(tool_profile: str = DEFAULT_TOOL_PROFILE) -> Server:
                     ),
                 )
             ]
+
+        if name == "dep_docs":
+            result = _docfetch().dep_docs(
+                library=arguments.get("library"),
+                topic=arguments.get("topic", "overview"),
+                version=arguments.get("version"),
+                root=arguments.get("root"),
+            )
+            return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
         if name == "know":
             from .chains import know as chain_know

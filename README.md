@@ -190,6 +190,29 @@ Key modules:
 - `workboard.py` stores plans and sessions under `.tldr/work/`.
 - `mcp_server.py` owns MCP tools, resources, prompts, profiles, and capability filtering.
 
+## Dependency docs
+
+`dep_docs` fetches CURRENT documentation for an external dependency, so an agent
+reasons from the version you actually use instead of stale training knowledge. It
+complements the local context-doc scan.
+
+Off by default. Egress is controlled by `TLDR_DEP_DOCS`:
+
+- `off` (default) - no fetch; nothing leaves the machine.
+- `local` - reads installed package metadata only (importlib / `node_modules`). No egress.
+- `context7` - opt-in remote fetch. Only the dependency name, pinned version,
+  ecosystem, and a short generic topic leave the machine. Never the project's
+  code, name, paths, or symbols.
+
+The pinned version is resolved from your manifests, so docs match what is
+installed; results cache under `.tldr/deps/`. Each result echoes the exact
+outbound payload in its `egress_payload` field, so you can audit what left.
+
+```bash
+export TLDR_DEP_DOCS=local        # offline metadata, zero egress
+export TLDR_DEP_DOCS=context7     # opt-in remote docs (name + version only)
+```
+
 ## Security audit
 
 `tldr audit` coordinates installed scanners and reports missing tools as setup
