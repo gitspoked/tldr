@@ -14,7 +14,7 @@ console = Console()
 
 
 def run_init(directory: Path, output_dir: str = ".claude"):
-    """Full pipeline: parse → embed → graph → generate TLDR.md."""
+    """Full pipeline: parse -> embed -> graph -> generate TLDR.md."""
 
     display_directory = directory
     directory = directory.resolve()

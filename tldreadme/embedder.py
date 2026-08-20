@@ -123,7 +123,7 @@ class CodeEmbedder:
         """Embed and store chunks in memory-safe slices.
 
         Processing 190K+ symbols in one shot exhausts RAM.  This streams
-        slices of ``slice_size`` chunks: embed → upsert → free → next.
+        slices of ``slice_size`` chunks: embed -> upsert -> free -> next.
         """
         if not chunks:
             return

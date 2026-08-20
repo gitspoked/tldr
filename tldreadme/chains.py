@@ -202,7 +202,7 @@ def discover(query: str, root: str = ".", hot_index: Optional[HotIndex] = None) 
 def explain(name: str, root: str = ".", hot_index: Optional[HotIndex] = None) -> str:
     """Full explanation chain - the everything tool.
 
-    Chain: know → impact → discover similar → LLM synthesis.
+    Chain: know -> impact -> discover similar -> LLM synthesis.
     Returns a natural language explanation of a symbol: what it is,
     how it works, what depends on it, what's similar, and what
     you should be careful about when modifying it.

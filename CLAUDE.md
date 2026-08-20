@@ -52,8 +52,8 @@ tldr children list                 # show detected subprojects
 
 # Security audit (local-first scanner orchestration)
 tldr audit all                     # run all categories (deps, code, secrets)
-tldr audit deps                    # dependency vulnerabilities (OSV-Scanner → pip-audit fallback)
-tldr audit code                    # static analysis (Semgrep → Bandit fallback)
+tldr audit deps                    # dependency vulnerabilities (OSV-Scanner -> pip-audit fallback)
+tldr audit code                    # static analysis (Semgrep -> Bandit fallback)
 tldr audit secrets                 # secret scanning (Gitleaks)
 tldr audit llm                     # LLM-specific checks (Garak)
 tldr audit deps --prefer-snyk      # use authenticated Snyk CLI instead of local defaults
@@ -77,18 +77,18 @@ The `bedrock` marker covers critical contracts protecting the router MCP surface
 
 ## Architecture
 
-Pipeline flow: **parse → embed → graph → generate**, orchestrated by `pipeline.py:run_init()`.
+Pipeline flow: **parse -> embed -> graph -> generate**, orchestrated by `pipeline.py:run_init()`.
 
 ```
 Source files
-  → asts.py (tree-sitter AST → Symbol, Import, CallSite dataclasses)
-  → deps.py (manifest dependency extraction)
-  → context_docs.py (README/CLAUDE/CODEX/GEMINI/AGENTS scanners)
-  → model_client.py (bounded Ollama or LiteLLM HTTP requests)
-  → embedder.py (embedding → Qdrant collection "tldreadme_code")
-  → grapher.py (FalkorDB graph "tldreadme" with Symbol/File/Module/Import nodes)
-  → hot_index.py (top 100 symbols cached → .tldr/hot_index.json)
-  → generator.py (LLM synthesis → .claude/TLDR.md + TLDR_CONTEXT.md)
+  -> asts.py (tree-sitter AST -> Symbol, Import, CallSite dataclasses)
+  -> deps.py (manifest dependency extraction)
+  -> context_docs.py (README/CLAUDE/CODEX/GEMINI/AGENTS scanners)
+  -> model_client.py (bounded Ollama or LiteLLM HTTP requests)
+  -> embedder.py (embedding -> Qdrant collection "tldreadme_code")
+  -> grapher.py (FalkorDB graph "tldreadme" with Symbol/File/Module/Import nodes)
+  -> hot_index.py (top 100 symbols cached -> .tldr/hot_index.json)
+  -> generator.py (LLM synthesis -> .claude/TLDR.md + TLDR_CONTEXT.md)
 ```
 
 ### Key Modules
@@ -98,14 +98,14 @@ Source files
   - **Layer 1** (always): `scan_context_docs()` + `extract_deps_from_directory()` for README/CLAUDE.md/etc. and manifest-based project detection.
   - **Layer 2** (if `.tldr/` exists): hot index top symbols + `.claude/TLDR.md` generated summary.
   - **Layer 3** (if services respond within 1s): raw HTTP ping to Qdrant, TCP PING to FalkorDB - no eager constructor calls.
-  Returns a dict with `enrichment_layers` (list of fired layers) and `fallback_used` (list of skipped steps). `render_peek()` formats for CLI, `render_peek_markdown()` for piping/agents, `peek_to_router_result()` maps to the MCP router contract (confidence 0.5→0.7→0.9 by layer depth).
+  Returns a dict with `enrichment_layers` (list of fired layers) and `fallback_used` (list of skipped steps). `render_peek()` formats for CLI, `render_peek_markdown()` for piping/agents, `peek_to_router_result()` maps to the MCP router contract (confidence 0.5->0.7->0.9 by layer depth).
 - **parser.py** - Compatibility facade. Re-exports AST parsing, dependency extraction, and context-doc scanning from the split modules. Do not bypass it; new parsing behavior goes into the split modules.
 - **asts.py** - Tree-sitter AST extraction. Produces `ParseResult`, `Symbol`, `Import`, and `CallSite` dataclasses.
 - **deps.py** - Manifest dependency extraction from Cargo.toml, package.json, go.mod, pyproject.toml, and requirements.txt.
 - **context_docs.py** - Scans CLAUDE.md, CODEX.md, README.md, AGENTS.md, GEMINI.md, TLDROADMAP.md, TLDRNOTES.md, `.tldr/roadmap/TLDRPLANS.md`, and related project docs into structured sections.
 - **embedder.py** - `CodeEmbedder` class wrapping Qdrant. `embed_batch()` for bulk, `embed_text()` for single queries. Collection auto-creates on first use with dimension auto-detection.
 - **grapher.py** - `CodeGrapher` class wrapping FalkorDB (Redis protocol). Query methods: `get_callers`, `get_callees`, `get_module_symbols`, `get_flow`, `get_dependents`.
-- **chains.py** - Composed tool sequences: `know` (hot index → rg → optional graph), `impact` (rg counts → optional graph dependents → severity), `discover` (rg + semantic merge), and `explain` (retrieval → synthesis).
+- **chains.py** - Composed tool sequences: `know` (hot index -> rg -> optional graph), `impact` (rg counts -> optional graph dependents -> severity), `discover` (rg + semantic merge), and `explain` (retrieval -> synthesis).
 - **mcp_server.py** - MCP tool/resource/prompt surface with router/full profiles. Capability-filters tools at runtime (suppresses tools when backends like LSP/Qdrant/FalkorDB are unavailable). Supports stdio (Claude Code) and SSE (remote clients) transports.
 - **rag.py** - Indexed retrieval, provider-backed synthesis, recent-change reads, and grounded planning helpers: `suggest_goals`, `best_question`, `goal_flow`, `auto_iterate`.
 - **model_client.py** - Direct Ollama and OpenAI-compatible LiteLLM HTTP client. Checks exact Ollama model readiness, never initiates a pull, and enforces transport plus wall-clock deadlines.
@@ -162,7 +162,7 @@ Full-profile audit tools: `audit_run` (execute scan by category), `audit_profile
 - Runtime state: `.tldr/` (gitignored except `.tldr/work/plans/` and `.tldr/work/children.yaml`)
 - Security audit: `.tldr/security/reports/` (timestamped JSON), `.tldr/security/known_exploited_vulnerabilities.json` (cached KEV catalog)
 - Generated context: `.claude/TLDR.md`, `.claude/TLDR_CONTEXT.md`
-- Human trust hierarchy (highest first): `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md` → `.tldr/roadmap/TLDRPLANS.md` → `TLDRNOTES.md` → raw drops → generated context → operational state
+- Human trust hierarchy (highest first): `README.md`, `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, `TLDROADMAP.md` -> `.tldr/roadmap/TLDRPLANS.md` -> `TLDRNOTES.md` -> raw drops -> generated context -> operational state
 - `TLDROADMAP.md` uses explicit trust markers: the top human-owned block is durable, and the lower auto-generated block is refreshable.
 - Source of truth is always the code, tests, and manifests
 
@@ -192,5 +192,5 @@ and `tiktoken`. Build system: hatchling. Install dev/test tooling with
 - 4-space indentation, snake_case for modules/functions/tests, PascalCase for dataclasses
 - Type hints on public functions, short direct docstrings
 - Extend existing modules rather than creating parallel abstractions
-- Tests mirror source: `tldreadme/foo.py` → `tests/test_foo.py`, using `CliRunner` for CLI and `tempfile`/`Path` for filesystem
+- Tests mirror source: `tldreadme/foo.py` -> `tests/test_foo.py`, using `CliRunner` for CLI and `tempfile`/`Path` for filesystem
 - Commits: short imperative subjects, narrowly scoped, no mixing refactors with behavior changes
