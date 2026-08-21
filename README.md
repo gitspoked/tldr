@@ -61,7 +61,8 @@ For immediate reconnaissance with no model or database:
 .venv/bin/tldr peek /path/to/project --markdown
 ```
 
-See [SETUP.md](SETUP.md) for local, LiteLLM, and troubleshooting instructions.
+See [docs/PEEK.md](docs/PEEK.md) for the layered enrichment model behind `peek`, and
+[SETUP.md](SETUP.md) for local, LiteLLM, and troubleshooting instructions.
 
 ## Plugin marketplaces
 
