@@ -25,6 +25,7 @@ class ProjectDeps:
     project_name: str
     project_version: str
     dependencies: list[Dependency]
+    project_description: str = ""
 
 
 def extract_deps_from_directory(root: Path) -> list[ProjectDeps]:
@@ -90,6 +91,7 @@ def _parse_cargo_toml(path: Path) -> Optional[ProjectDeps]:
     pkg = data.get("package", {})
     project_name = pkg.get("name", path.parent.name)
     project_version = pkg.get("version", "0.0.0")
+    project_description = pkg.get("description", "")
     deps: list[Dependency] = []
 
     for name, spec in data.get("dependencies", {}).items():
@@ -136,6 +138,7 @@ def _parse_cargo_toml(path: Path) -> Optional[ProjectDeps]:
         project_name=project_name,
         project_version=project_version,
         dependencies=deps,
+        project_description=project_description,
     )
 
 
@@ -164,6 +167,7 @@ def _parse_package_json(path: Path) -> Optional[ProjectDeps]:
 
     project_name = data.get("name", path.parent.name)
     project_version = data.get("version", "0.0.0")
+    project_description = data.get("description", "")
     deps: list[Dependency] = []
 
     for name, version in data.get("dependencies", {}).items():
@@ -204,6 +208,7 @@ def _parse_package_json(path: Path) -> Optional[ProjectDeps]:
         project_name=project_name,
         project_version=project_version,
         dependencies=deps,
+        project_description=project_description,
     )
 
 
@@ -282,6 +287,7 @@ def _parse_pyproject_toml(path: Path) -> Optional[ProjectDeps]:
     project = data.get("project", {})
     project_name = project.get("name", path.parent.name)
     project_version = project.get("version", "0.0.0")
+    project_description = project.get("description", "")
     deps: list[Dependency] = []
 
     for dep_str in project.get("dependencies", []):
@@ -314,6 +320,7 @@ def _parse_pyproject_toml(path: Path) -> Optional[ProjectDeps]:
         project_name=project_name,
         project_version=project_version,
         dependencies=deps,
+        project_description=project_description,
     )
 
 

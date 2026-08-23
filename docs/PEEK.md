@@ -54,11 +54,17 @@ nearest project root:
 
 - Context docs: `README.md`, `CLAUDE.md`, `AGENTS.md`, `CODEX.md`, `GEMINI.md`,
   and related files.
-- Project identity: name and version detected from the nearest manifest -
-  `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, or `setup.py`.
+- Project identity: name, version, and description detected from the nearest
+  manifest - `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, or `setup.py`.
 
 Appends `context_docs` to `enrichment_layers` when any docs are found. On error it
 records `context_docs_failed` in `fallback_used` and continues.
+
+Layer 1 also derives an `about` line - a model-free "what is this repo about".
+Priority is the manifest's own `description`, then the first real paragraph of a
+readme-like doc. Agent-instruction files (`CLAUDE.md`, `AGENTS.md`, `CODEX.md`,
+`GEMINI.md`) are skipped for this, because their opening paragraph explains how to
+work in the repo, not what the repo is.
 
 ### Layer 2 - Indexed knowledge (runs if `.tldr/` exists)
 
@@ -96,7 +102,8 @@ as `qdrant_unavailable` / `falkordb_unavailable` (or `*_search_failed` /
 | --- | --- |
 | `path` | Absolute resolved path |
 | `type` | `directory`, `file`, or `missing` |
-| `project` | Name/version from Layer 1, or `null` |
+| `project` | Name/version/description from Layer 1, or `null` |
+| `about` | Model-free repo purpose (manifest description or README), or `""` |
 | `stats` | Layer 0 counts (files, lines, extensions, size) |
 | `context_docs` | Layer 1 docs found |
 | `symbols` | Layer 0 symbols (files only) |
@@ -134,6 +141,32 @@ weight the result by how much real context stands behind it:
 This is why `peek` is wired in as the `repo_lookup` fallback for unindexed repos:
 it always returns something useful, and it reports honestly how confident that
 something is.
+
+## Worked example
+
+A real `peek` on an indexed file in this repo (`tldreadme/docfetch.py`), with
+FalkorDB up but Qdrant down:
+
+```text
+type              : file
+enrichment_layers : ['disk', 'context_docs', 'tldr', 'falkordb']
+fallback_used     : ['qdrant_unavailable', 'falkordb_query_failed']
+indexed           : True
+about             : Local-first repository reconnaissance, code navigation, planning, and verification through CLI and MCP interfaces.
+stats             : {"files": 1, "lines": 573, "extensions": {"py": 1}, "size_bytes": 22715}
+project           : {"name": "tldreadme", "version": "0.1.4", "manifest": "pyproject.toml"}
+```
+
+Read the trace back through the layers:
+
+- Layer 0 (`disk`) produced `stats` and the symbol list.
+- Layer 1 (`context_docs`) found the project and set `about` from the manifest's
+  `description` - which is why it reads slightly fuller than the README tagline.
+- Layer 2 (`tldr`) fired because `.tldr/` exists (`indexed: True`).
+- Layer 3: FalkorDB answered its `PING`, so `falkordb` joined `enrichment_layers`,
+  but Qdrant did not respond and the graph query then errored - both recorded in
+  `fallback_used`. Because a Layer-3 service responded, `peek_to_router_result`
+  reports confidence `0.9`.
 
 ## Design principles
 

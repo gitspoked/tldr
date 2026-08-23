@@ -14,8 +14,11 @@ Layer 0 - Filesystem scan (always runs):
 Layer 1 - Context docs (always runs):
     scan_context_docs() finds README.md, CLAUDE.md, AGENTS.md, CODEX.md,
     GEMINI.md, etc. from the target or its nearest project root.
-    extract_deps_from_directory() detects project name/version from
-    pyproject.toml, package.json, Cargo.toml, go.mod, setup.py.
+    extract_deps_from_directory() detects project name/version/description
+    from pyproject.toml, package.json, Cargo.toml, go.mod, setup.py.
+    _extract_purpose() derives a model-free `about` line: the manifest
+    description, else the README's first real paragraph, skipping the
+    "how to work here" boilerplate in agent-instruction files.
 
 Layer 2 - Indexed knowledge (runs if .tldr/ exists):
     Loads hot_index.json (top 20 symbols by importance heuristic).
@@ -36,8 +39,9 @@ render_peek_markdown(result) Markdown with headings and tables.
 peek_to_router_result(r)    Maps peek dict to MCP router contract shape.
 
 The returned dict always contains all keys so callers need no defensive
-.get() calls: path, type, project, stats, context_docs, symbols, indexed,
-generated_summary, hot_symbols, related, enrichment_layers, fallback_used.
+.get() calls: path, type, project, about, stats, context_docs, symbols,
+indexed, generated_summary, hot_symbols, related, enrichment_layers,
+fallback_used.
 """
 
 from __future__ import annotations
@@ -108,8 +112,8 @@ def peek_target(path: Path | str) -> Dict[str, Any]:
         path: File or directory to inspect. Resolved to an absolute path.
 
     Returns:
-        dict with keys: path, type, project, stats, context_docs, symbols,
-        indexed, generated_summary, hot_symbols, related,
+        dict with keys: path, type, project, about, stats, context_docs,
+        symbols, indexed, generated_summary, hot_symbols, related,
         enrichment_layers (list[str]), fallback_used (list[str]).
 
         enrichment_layers records which layers ran: "disk" is always first,
@@ -137,6 +141,7 @@ def peek_target(path: Path | str) -> Dict[str, Any]:
         "generated_summary": None,
         "symbols": [],
         "project": None,
+        "about": "",
     }
 
     # Layer 0: filesystem scan
@@ -163,6 +168,8 @@ def peek_target(path: Path | str) -> Dict[str, Any]:
             enrichment_layers.append("context_docs")
     except Exception:
         fallback_used.append("context_docs_failed")
+
+    result["about"] = _extract_purpose(result["project"], result["context_docs"])
 
     # Layer 2: indexed knowledge
     project_root = _find_project_root(target if target.is_dir() else target.parent)
@@ -375,9 +382,44 @@ def _enrich_context_docs(target: Path) -> tuple[list[dict], dict | None]:
             "name": nearest.project_name,
             "version": nearest.project_version,
             "manifest": Path(nearest.manifest_file).name,
+            "description": nearest.project_description,
         }
 
     return context_docs, project
+
+
+# Agent-instruction docs lead with "how to work in this repo", not "what it is".
+_PURPOSE_SKIP_KINDS = frozenset({"claude", "codex", "agents", "gemini", "notes", "plans", "roadmap"})
+_PURPOSE_PREFER_KINDS = ("readme", "tldreadme", "context", "architecture")
+_BOILERPLATE_RE = re.compile(r"^\s*this file provides guidance", re.IGNORECASE)
+
+
+def _extract_purpose(project: dict | None, context_docs: list[dict]) -> str:
+    """Best-effort, model-free 'what is this repo about'.
+
+    Priority: the manifest's own description, then a readme-like doc's first
+    paragraph. Agent-instruction files (CLAUDE/CODEX/AGENTS/GEMINI) are skipped
+    because their opening paragraph explains how to work in the repo, not what
+    the repo is.
+    """
+    if project and project.get("description"):
+        return project["description"].strip()[:280]
+
+    by_kind: dict[str, dict] = {}
+    for doc in context_docs:
+        by_kind.setdefault(doc.get("kind", ""), doc)
+    for kind in _PURPOSE_PREFER_KINDS:
+        summary = (by_kind.get(kind) or {}).get("summary", "").strip()
+        if summary and not _BOILERPLATE_RE.match(summary):
+            return summary
+
+    for doc in context_docs:
+        if doc.get("kind") in _PURPOSE_SKIP_KINDS:
+            continue
+        summary = (doc.get("summary") or "").strip()
+        if summary and not _BOILERPLATE_RE.match(summary):
+            return summary
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +516,7 @@ def render_peek(result: dict) -> str:
     Sections (each only shown when data is present):
         Header: project name + manifest, version, file count, line count,
                 extension breakdown.
-        What It Is: first README paragraph (<=200 chars).
+        What It Is: the `about` line (manifest description or README paragraph).
         Context Docs: non-README context docs with one-line summaries.
         Defines: symbol list (file mode only, <=15 symbols).
         Indexed?: .tldr/ presence, hot symbol count, Qdrant/FalkorDB status.
@@ -515,11 +557,11 @@ def render_peek(result: dict) -> str:
             lines.append(f"   Part of: {project['name']} v{project.get('version', '')}")
 
     context_docs = result.get("context_docs", [])
-    readme_doc = next((d for d in context_docs if d["kind"] == "readme"), None)
-    if readme_doc and readme_doc.get("summary"):
+    about = result.get("about", "")
+    if about:
         lines.append("")
         lines.append("-- What It Is " + "-" * 40)
-        lines.append(f"{readme_doc['summary']}")
+        lines.append(about)
 
     other_docs = [d for d in context_docs if d["kind"] != "readme"]
     if other_docs:
@@ -656,9 +698,9 @@ def peek_to_router_result(peek_result: dict) -> dict:
     project = peek_result.get("project")
     stats = peek_result.get("stats", {})
 
-    readme = next((d for d in context_docs if d["kind"] == "readme"), None)
-    if readme and readme.get("summary"):
-        summary = readme["summary"][:200]
+    about = peek_result.get("about", "")
+    if about:
+        summary = about[:200]
     elif project:
         summary = (
             f"{project['name']}: {stats.get('files', 0)} files, {stats.get('lines', 0):,} lines"
